@@ -1,0 +1,11 @@
+{
+  "route_version": "0.1",
+  "record_type": "decision",
+  "route_id": "route_conformance_invalid",
+  "created_at": "2026-08-22T12:00:00.000Z",
+  "task": { "type": "chat" },
+  "router": { "name": "test" },
+  "source": { "kind": "native", "fidelity": "full" },
+  "candidates": [{ "id": "present", "model": "model-a" }],
+  "selection": { "candidate_id": "missing", "reason": "invalid fixture" }
+}

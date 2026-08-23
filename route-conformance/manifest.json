@@ -1,0 +1,12 @@
+{
+  "route_version": "0.1",
+  "valid": [
+    "../examples/code-review.route.json",
+    "../examples/model-routing.route.jsonl",
+    "minimal-selected-only.route.json"
+  ],
+  "invalid": [
+    { "path": "invalid-selection.route.json", "error": "does not reference a candidate" },
+    { "path": "observation-first.route.jsonl", "error": "observation precedes decision" }
+  ]
+}

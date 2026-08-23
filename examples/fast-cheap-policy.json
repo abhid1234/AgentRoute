@@ -1,0 +1,15 @@
+{
+  "id": "fast-cheap",
+  "version": "1.0.0",
+  "criteria": {
+    "max_cost_usd": 0.05,
+    "max_latency_ms": 2000,
+    "required_capabilities": ["code"]
+  },
+  "weights": {
+    "quality": 0.1,
+    "latency": 0.5,
+    "cost": 0.3,
+    "capability": 0.1
+  }
+}

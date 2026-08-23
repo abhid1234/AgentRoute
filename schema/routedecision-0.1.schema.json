@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opentrajectory.dev/schema/routedecision-0.1.schema.json",
+  "title": "AgentRoute receipt record v0.1",
+  "description": "An immutable model-routing decision or a later measured observation.",
+  "oneOf": [
+    { "$ref": "#/$defs/decision" },
+    { "$ref": "#/$defs/observation" }
+  ],
+  "$defs": {
+    "nonEmpty": { "type": "string", "minLength": 1 },
+    "unit": { "type": "number", "minimum": 0, "maximum": 1 },
+    "nonNegative": { "type": "number", "minimum": 0 },
+    "task": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "$ref": "#/$defs/nonEmpty" },
+        "description": { "type": "string" },
+        "fingerprint": { "$ref": "#/$defs/nonEmpty" }
+      },
+      "additionalProperties": false
+    },
+    "router": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "$ref": "#/$defs/nonEmpty" },
+        "version": { "type": "string" },
+        "policy_id": { "type": "string" },
+        "policy_version": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "required": ["kind", "fidelity"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/nonEmpty" },
+        "fidelity": { "enum": ["full", "partial", "selected-only"] },
+        "event_id": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "estimates": {
+      "type": "object",
+      "properties": {
+        "quality": { "$ref": "#/$defs/unit" },
+        "latency_ms": { "$ref": "#/$defs/nonNegative" },
+        "cost_usd": { "$ref": "#/$defs/nonNegative" }
+      },
+      "additionalProperties": false
+    },
+    "scores": {
+      "type": "object",
+      "properties": {
+        "overall": { "$ref": "#/$defs/unit" },
+        "quality": { "$ref": "#/$defs/unit" },
+        "latency": { "$ref": "#/$defs/unit" },
+        "cost": { "$ref": "#/$defs/unit" },
+        "capability": { "$ref": "#/$defs/unit" },
+        "custom": { "type": "object", "additionalProperties": { "type": "number" } }
+      },
+      "additionalProperties": false
+    },
+    "candidate": {
+      "type": "object",
+      "required": ["id", "model"],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmpty" },
+        "model": { "$ref": "#/$defs/nonEmpty" },
+        "provider": { "type": "string" },
+        "endpoint": { "type": "string" },
+        "capabilities": { "type": "array", "items": { "$ref": "#/$defs/nonEmpty" }, "uniqueItems": true },
+        "eligible": { "type": "boolean" },
+        "ineligible_reasons": { "type": "array", "items": { "$ref": "#/$defs/nonEmpty" } },
+        "estimates": { "$ref": "#/$defs/estimates" },
+        "scores": { "$ref": "#/$defs/scores" }
+      },
+      "additionalProperties": false
+    },
+    "criteria": {
+      "type": "object",
+      "properties": {
+        "max_cost_usd": { "$ref": "#/$defs/nonNegative" },
+        "max_latency_ms": { "$ref": "#/$defs/nonNegative" },
+        "min_quality": { "$ref": "#/$defs/unit" },
+        "required_capabilities": { "type": "array", "items": { "$ref": "#/$defs/nonEmpty" }, "uniqueItems": true },
+        "weights": {
+          "type": "object",
+          "properties": {
+            "quality": { "$ref": "#/$defs/unit" },
+            "latency": { "$ref": "#/$defs/unit" },
+            "cost": { "$ref": "#/$defs/unit" },
+            "capability": { "$ref": "#/$defs/unit" }
+          },
+          "additionalProperties": false
+        },
+        "custom": { "type": "object", "additionalProperties": true }
+      },
+      "additionalProperties": false
+    },
+    "selection": {
+      "type": "object",
+      "required": ["candidate_id", "reason"],
+      "properties": {
+        "candidate_id": { "$ref": "#/$defs/nonEmpty" },
+        "confidence": { "$ref": "#/$defs/unit" },
+        "reason": { "$ref": "#/$defs/nonEmpty" },
+        "constraints_satisfied": { "type": "array", "items": { "type": "string" } },
+        "tradeoffs": { "type": "array", "items": { "type": "string" } },
+        "fallback_order": { "type": "array", "items": { "$ref": "#/$defs/nonEmpty" }, "uniqueItems": true }
+      },
+      "additionalProperties": false
+    },
+    "context": {
+      "type": "object",
+      "properties": {
+        "trajectory_id": { "type": "string" },
+        "ot_step_ref": { "type": "string" },
+        "session_id": { "type": "string" },
+        "parent_route_id": { "type": "string" },
+        "traceparent": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "decision": {
+      "type": "object",
+      "required": ["route_version", "record_type", "route_id", "created_at", "task", "router", "source", "candidates", "selection"],
+      "properties": {
+        "route_version": { "const": "0.1" },
+        "record_type": { "const": "decision" },
+        "route_id": { "$ref": "#/$defs/nonEmpty" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "task": { "$ref": "#/$defs/task" },
+        "router": { "$ref": "#/$defs/router" },
+        "source": { "$ref": "#/$defs/source" },
+        "candidates": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/candidate" } },
+        "criteria": { "$ref": "#/$defs/criteria" },
+        "selection": { "$ref": "#/$defs/selection" },
+        "context": { "$ref": "#/$defs/context" },
+        "extensions": { "type": "object", "additionalProperties": true }
+      },
+      "additionalProperties": false
+    },
+    "outcome": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["success", "failure", "partial", "cancelled", "unknown"] },
+        "actual_model": { "type": "string" },
+        "actual_provider": { "type": "string" },
+        "latency_ms": { "$ref": "#/$defs/nonNegative" },
+        "cost_usd": { "$ref": "#/$defs/nonNegative" },
+        "quality": { "$ref": "#/$defs/unit" },
+        "trajectory_ref": { "type": "string" },
+        "error": { "type": "string" },
+        "metadata": { "type": "object", "additionalProperties": true }
+      },
+      "additionalProperties": false
+    },
+    "observation": {
+      "type": "object",
+      "required": ["route_version", "record_type", "route_id", "observation_id", "observed_at", "outcome"],
+      "properties": {
+        "route_version": { "const": "0.1" },
+        "record_type": { "const": "observation" },
+        "route_id": { "$ref": "#/$defs/nonEmpty" },
+        "observation_id": { "$ref": "#/$defs/nonEmpty" },
+        "observed_at": { "type": "string", "format": "date-time" },
+        "outcome": { "$ref": "#/$defs/outcome" },
+        "extensions": { "type": "object", "additionalProperties": true }
+      },
+      "additionalProperties": false
+    }
+  }
+}
