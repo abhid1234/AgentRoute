@@ -15,6 +15,7 @@ npm run conformance
 node dist/cli.js route explain examples/model-routing.route.jsonl
 node dist/cli.js route replay examples/model-routing.route.jsonl
 node dist/cli.js route simulate examples/model-routing.route.jsonl --policy examples/fast-cheap-policy.json
+node dist/cli.js report examples/can-auto-routing-prove-it.route.jsonl
 ```
 
 The `ar` package binary accepts both `ar ...` and the historical `ar route ...` form.
@@ -25,7 +26,15 @@ The `ar` package binary accepts both `ar ...` and the historical `ar route ...` 
 - Append-only JSONL ledger with idempotent retries and sequence validation.
 - Human-readable explanation, deterministic replay analytics, and policy simulation.
 - Metadata-only OpenRouter and LiteLLM imports with conservative evidence fidelity.
+- Live, non-streaming OpenRouter capture with stable router metadata and an allowlisted receipt boundary.
+- Exa-backed fresh task packs plus a deterministic evaluator contract.
+- Screenshot-ready receipt detail and routing reports that separate predicted from measured values.
 - Privacy-safe OTLP/JSON export for routing decision spans.
 - Examples, adversarial behavioral tests, and a conformance corpus.
 
 The format and UX constraints are documented in [`docs/agentroute-spec.md`](docs/agentroute-spec.md). The handoff records the stable surfaces and verification boundary.
+
+The first end-to-end demo kit is documented in
+[`docs/can-auto-routing-prove-it.md`](docs/can-auto-routing-prove-it.md). Its
+bundled receipts are explicitly illustrative; live task generation and model
+calls require user-provided environment keys and are never run implicitly.

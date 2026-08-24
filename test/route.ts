@@ -19,6 +19,10 @@ import {
   simulateRoutePolicy,
 } from "../src/route.js";
 import { fromLiteLLMRoute, fromOpenRouterRoute } from "../src/route-adapters.js";
+import { captureOpenRouter } from "../src/openrouter-capture.js";
+import { evaluationToObservation, evaluateChecklist } from "../src/evaluation.js";
+import { formatReceiptDetail, formatRouteReport } from "../src/route-report.js";
+import { createExaTaskPack } from "../src/task-pack.js";
 import { routeToOtel } from "../src/route-to-otel.js";
 import { validateRouteLedger, validateRouteRecord } from "../src/route-validate.js";
 import type { RouteDecision } from "../src/route-types.js";
@@ -137,9 +141,112 @@ const partial = fromOpenRouterRoute({ model: "model-a", selected_candidate_id: "
 ok("candidate list without completeness attestation is partial", partial.source.fidelity === "partial");
 const full = fromOpenRouterRoute({ model: "model-a", selected_candidate_id: "a", candidates: [{ id: "a", model: "model-a" }, { id: "b", model: "model-b" }] }, { completeCandidateSet: true });
 ok("explicit completeness attestation permits full fidelity", full.source.fidelity === "full");
+const routed = fromOpenRouterRoute({
+  id: "gen_metadata",
+  model: "model-auto",
+  secret: "must-not-copy",
+  openrouter_metadata: {
+    requested: "openrouter/auto",
+    strategy: "auto",
+    summary: "available=2, selected=Provider B",
+    attempt: 2,
+    endpoints: { total: 2, available: [
+      { provider: "Provider A", model: "model-auto", selected: false },
+      { provider: "Provider B", model: "model-auto", selected: true },
+    ] },
+    attempts: [
+      { provider: "Provider A", model: "model-auto", status: 529, raw_error: "private" },
+      { provider: "Provider B", model: "model-auto", status: 200 },
+    ],
+    pipeline: [{ type: "context_compression", name: "context-compression", summary: "compressed", data: { prompt: "private" } }],
+    unknown: { api_key: "private" },
+  },
+});
+ok("OpenRouter metadata identifies selected provider", routed.candidates.find((candidate) => candidate.id === routed.selection.candidate_id)?.provider === "Provider B");
+ok("OpenRouter endpoint snapshot is full fidelity when totals match", routed.source.fidelity === "full" && routed.router.policy_id === "auto");
+const routedText = JSON.stringify(routed);
+ok("OpenRouter metadata allowlist drops unknown and nested sensitive fields", !routedText.includes("must-not-copy") && !routedText.includes("raw_error") && !routedText.includes("api_key") && !routedText.includes("prompt"));
 const litellm = fromLiteLLMRoute({ model: "model-l", litellm_params: { custom_llm_provider: "provider-l" }, response_cost: 0.004, api_key: "must-not-copy" });
 ok("LiteLLM maps selected metadata", litellm.candidates[0].model === "model-l" && litellm.candidates[0].provider === "provider-l");
 ok("LiteLLM adapter does not retain source secrets", !JSON.stringify(litellm).includes("api_key"));
+
+console.log("live capture, grounding, evaluation, and reports");
+let captureRequest: { url?: string; headers?: Record<string, string>; body?: string } = {};
+const ticks = [1_700_000_000_000, 1_700_000_000_125];
+const captured = await captureOpenRouter({
+  apiKey: "test-openrouter-key",
+  request: { model: "openrouter/auto", messages: [{ role: "user", content: "private prompt" }] },
+  routeId: "route_live_capture",
+  taskType: "research",
+  clock: () => ticks.shift()!,
+  fetcher: async (url, init) => {
+    captureRequest = { url, headers: init.headers, body: init.body };
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        id: "gen_live",
+        model: "model-live",
+        choices: [{ message: { content: "private answer" } }],
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cost: 0.002 },
+        openrouter_metadata: {
+          requested: "openrouter/auto",
+          strategy: "auto",
+          summary: "available=1, selected=Provider Live",
+          endpoints: { total: 1, available: [{ provider: "Provider Live", model: "model-live", selected: true }] },
+        },
+      }),
+    };
+  },
+});
+ok("live capture opts into stable OpenRouter metadata", captureRequest.headers?.["X-OpenRouter-Metadata"] === "enabled");
+ok("live capture records measured latency and cost", captured.observation.outcome.latency_ms === 125 && captured.observation.outcome.cost_usd === 0.002);
+const captureLedgerText = JSON.stringify([captured.decision, captured.observation]);
+ok("live capture receipts omit prompts, response text, and API keys", !captureLedgerText.includes("private prompt") && !captureLedgerText.includes("private answer") && !captureLedgerText.includes("test-openrouter-key"));
+
+let exaRequest: { headers?: Record<string, string>; body?: string } = {};
+const taskPack = await createExaTaskPack({
+  apiKey: "test-exa-key",
+  generatedAt: "2026-08-23T12:00:00.000Z",
+  seeds: [{ id: "current-docs", type: "research", query: "Find the current official migration guide", include_domains: ["example.com"] }],
+  fetcher: async (_url, init) => {
+    exaRequest = { headers: init.headers, body: init.body };
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ results: [{ title: "Official guide", url: "https://example.com/guide", publishedDate: "2026-08-20", highlights: ["Use the new API."] }], secret: "drop-me" }),
+    };
+  },
+});
+ok("Exa task packs request nested highlights and domain filters", JSON.parse(exaRequest.body!).contents.highlights === true && JSON.parse(exaRequest.body!).includeDomains[0] === "example.com");
+ok("Exa task packs retain grounded evidence without credentials", taskPack.tasks[0].evidence[0].highlights[0] === "Use the new API." && !JSON.stringify(taskPack).includes("test-exa-key") && !JSON.stringify(taskPack).includes("drop-me"));
+
+const evaluated = evaluateChecklist({
+  route_id: valid.route_id,
+  evaluator: { id: "demo-checklist", version: "1" },
+  evaluated_at: "2026-08-22T10:00:02.000Z",
+  checks: [
+    { id: "correct", passed: true, weight: 3, required: true },
+    { id: "cited", passed: false, weight: 1 },
+  ],
+});
+ok("evaluator contract produces weighted outcome quality", evaluated.status === "partial" && evaluated.quality === 0.75);
+const evaluationObservation = evaluationToObservation({
+  route_id: valid.route_id,
+  evaluator: { id: "demo-checklist" },
+  evaluated_at: "2026-08-22T10:00:02.000Z",
+  checks: [{ id: "correct", passed: false, required: true }],
+}, { status: "success", latency_ms: 321, cost_usd: 0.004, metadata: { tool_calls: "none" } });
+ok("required evaluator failures fail closed", evaluationObservation.outcome.status === "failure" && evaluationObservation.outcome.quality === 0);
+ok("evaluation observations retain prior measured metrics", evaluationObservation.outcome.latency_ms === 321 && evaluationObservation.outcome.cost_usd === 0.004 && evaluationObservation.outcome.metadata?.tool_calls === "none");
+const detail = formatReceiptDetail({ decision: valid, observations: [], latest_observation: evaluationToObservation({
+  route_id: valid.route_id,
+  evaluator: { id: "demo" },
+  evaluated_at: "2026-08-22T10:00:02.000Z",
+  checks: [{ id: "correct", passed: true }],
+}) });
+ok("receipt detail separates predicted candidates from measured outcome", detail.includes("CANDIDATES (predicted at routing time)") && detail.includes("Outcome      success"));
+ok("routing report summarizes decisions and receipt detail", formatRouteReport([valid]).includes("Decisions 1 · observed 0") && formatRouteReport([valid]).includes("AGENTROUTE RECEIPT route_test"));
 
 console.log("OpenTelemetry and published artifacts");
 const otelText = JSON.stringify(routeToOtel({ decision: valid, observations: [] }));
@@ -149,6 +256,10 @@ const example = JSON.parse(readFileSync(join(root, "examples/code-review.route.j
 ok("standalone example passes runtime validation", validateRouteRecord(example).valid, validateRouteRecord(example).errors.join("; "));
 const corpus = parseRouteRecords(readFileSync(join(root, "examples/model-routing.route.jsonl"), "utf8"));
 ok("ledger example passes sequence validation", validateRouteLedger(corpus).valid);
+const demoCorpus = parseRouteRecords(readFileSync(join(root, "examples/can-auto-routing-prove-it.route.jsonl"), "utf8"));
+ok("Auto Routing demo fixture is conformant and explicitly illustrative", validateRouteLedger(demoCorpus).valid && demoCorpus.every((record) => record.extensions?.demo_fixture === "illustrative-only"));
+const demoSeeds = JSON.parse(readFileSync(join(root, "examples/can-auto-routing-prove-it.tasks.json"), "utf8"));
+ok("Auto Routing demo defines ten grounded task seeds", Array.isArray(demoSeeds.seeds) && demoSeeds.seeds.length === 10);
 const schema = JSON.parse(readFileSync(join(root, "schema/routedecision-0.1.schema.json"), "utf8"));
 ok("schema publishes draft 2020-12 and both record forms", schema.$schema.includes("2020-12") && schema.$defs.decision && schema.$defs.observation);
 const requiredStayAligned = (record: Record<string, unknown>, required: string[]): boolean => required.every((field) => {

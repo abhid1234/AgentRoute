@@ -1,0 +1,74 @@
+{
+  "seeds": [
+    {
+      "id": "nextjs-current-upgrade",
+      "type": "coding_research",
+      "query": "Find the current official Next.js upgrade guide and identify the required migration steps for an App Router project.",
+      "include_domains": ["nextjs.org"],
+      "quality_bar": ["Use only current official Next.js documentation", "List concrete migration steps", "Cite every source URL"]
+    },
+    {
+      "id": "openai-current-responses",
+      "type": "coding_research",
+      "query": "Find the current official OpenAI Responses API migration guidance and provide a minimal JavaScript example.",
+      "include_domains": ["platform.openai.com", "developers.openai.com"],
+      "quality_bar": ["Use only official OpenAI documentation", "Produce a syntactically valid minimal example", "Cite every source URL"]
+    },
+    {
+      "id": "vercel-ai-sdk-tools",
+      "type": "coding_research",
+      "query": "Find the current official Vercel AI SDK documentation for tool calling and summarize the supported execution flow.",
+      "include_domains": ["ai-sdk.dev", "vercel.com"],
+      "quality_bar": ["Use current official documentation", "Separate client and server responsibilities", "Cite every source URL"]
+    },
+    {
+      "id": "typescript-node-esm",
+      "type": "coding_research",
+      "query": "Find the current official TypeScript and Node.js guidance for publishing an ESM command-line package.",
+      "include_domains": ["typescriptlang.org", "nodejs.org"],
+      "quality_bar": ["Use first-party documentation", "Cover package metadata and executable entry points", "Cite every source URL"]
+    },
+    {
+      "id": "python-packaging-current",
+      "type": "coding_research",
+      "query": "Find the current Python Packaging User Guide for creating a command-line application with pyproject.toml.",
+      "include_domains": ["packaging.python.org"],
+      "quality_bar": ["Use the official packaging guide", "Show the relevant pyproject.toml entry", "Cite every source URL"]
+    },
+    {
+      "id": "cloudflare-workers-limits",
+      "type": "vendor_comparison",
+      "query": "Find the current official Cloudflare Workers runtime limits that affect AI API proxy workloads.",
+      "include_domains": ["developers.cloudflare.com"],
+      "quality_bar": ["Use current official limits", "Distinguish plan-dependent limits", "Cite every source URL"]
+    },
+    {
+      "id": "github-actions-node",
+      "type": "coding_research",
+      "query": "Find the current official GitHub Actions guidance for testing a Node.js project across supported Node versions.",
+      "include_domains": ["docs.github.com"],
+      "quality_bar": ["Use official GitHub documentation", "Provide a minimal matrix workflow", "Cite every source URL"]
+    },
+    {
+      "id": "otel-genai-current",
+      "type": "standards_research",
+      "query": "Find the current official OpenTelemetry semantic conventions for generative AI model spans and list the stable attributes.",
+      "include_domains": ["opentelemetry.io"],
+      "quality_bar": ["Use official OpenTelemetry documentation", "Distinguish stable from experimental attributes", "Cite every source URL"]
+    },
+    {
+      "id": "react-current-server-functions",
+      "type": "coding_research",
+      "query": "Find the current official React documentation for Server Functions and explain the security boundary.",
+      "include_domains": ["react.dev"],
+      "quality_bar": ["Use official React documentation", "Explain serialization and authorization concerns", "Cite every source URL"]
+    },
+    {
+      "id": "postgres-current-json-indexing",
+      "type": "coding_research",
+      "query": "Find the current official PostgreSQL documentation for indexing JSONB containment queries and recommend an index form.",
+      "include_domains": ["postgresql.org"],
+      "quality_bar": ["Use official PostgreSQL documentation", "State query/operator assumptions", "Cite every source URL"]
+    }
+  ]
+}

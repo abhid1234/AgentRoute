@@ -1,7 +1,10 @@
 // `ot route` command family. Parsing stays intentionally small and dependency
 // free so receipts work in the same airlocked environments as OpenTrajectory.
 import { readFileSync, writeFileSync } from "node:fs";
+import { evaluationToObservation } from "./evaluation.js";
+import { captureOpenRouter } from "./openrouter-capture.js";
 import { fromLiteLLMRoute, fromOpenRouterRoute } from "./route-adapters.js";
+import { formatRouteReport } from "./route-report.js";
 import { routeToOtel } from "./route-to-otel.js";
 import {
   appendRouteRecord,
@@ -15,6 +18,9 @@ import {
   writeRouteDecision,
 } from "./route.js";
 import { assertRouteRecord } from "./route-validate.js";
+import { createExaTaskPack } from "./task-pack.js";
+import type { EvaluationDraft } from "./evaluation.js";
+import type { TaskSeed } from "./task-pack.js";
 import type { RouteDecision, RouteOutcomeStatus } from "./route-types.js";
 import type { RouteSimulationPolicy } from "./route-types.js";
 
@@ -40,22 +46,55 @@ function emit(value: unknown, output?: string): void {
   else process.stdout.write(json);
 }
 
+function emitText(value: string, output?: string): void {
+  const text = value.endsWith("\n") ? value : value + "\n";
+  if (output) writeFileSync(output, text);
+  else process.stdout.write(text);
+}
+
 const HELP = `AgentRoute — auditable model-routing receipts
+  ar capture openrouter <request.json> [--ledger routes.route.jsonl | -o capture.json]
   ot route record <decision.json> [-o receipt.route.json | --ledger routes.route.jsonl] [--force]
   ot route observe <routes.route.jsonl> --route-id ID --status STATUS [--latency-ms N] [--cost-usd N] [--quality N]
+  ar evaluate <evaluation.json> --ledger routes.route.jsonl
   ot route validate <receipt.route.json|routes.route.jsonl>
   ot route explain <receipt.route.json|routes.route.jsonl> [--route-id ID]
   ot route replay <routes.route.jsonl> [-o report.json]
   ot route simulate <routes.route.jsonl> --policy policy.json [-o report.json]
+  ar report <routes.route.jsonl> [--route-id ID] [-o report.txt]
+  ar task-pack exa <seeds.json> [-o task-pack.json]
   ot route to-otel <receipt.route.json|routes.route.jsonl> [--route-id ID] [-o traces.json]
   ot route import <openrouter|litellm> <event.json> [-o receipt.route.json] [--complete-candidates]
 
 STATUS: success | failure | partial | cancelled | unknown`;
 
-export function runRouteCli(args: string[]): void {
+export async function runRouteCli(args: string[]): Promise<void> {
   const [command, ...rest] = args;
   if (!command || command === "help" || command === "--help" || command === "-h") {
     process.stdout.write(HELP + "\n");
+    return;
+  }
+
+  if (command === "capture") {
+    const [source, input] = rest;
+    if (source !== "openrouter" || !input) {
+      throw new Error("usage: ar capture openrouter <request.json> [--ledger routes.route.jsonl | -o capture.json]");
+    }
+    const ledger = option(rest, "--ledger");
+    const output = option(rest, "-o", "--out");
+    if (ledger && output) throw new Error("choose either --ledger or --out, not both");
+    const request = JSON.parse(readFileSync(input, "utf8")) as Record<string, unknown>;
+    const result = await captureOpenRouter({
+      apiKey: process.env.OPENROUTER_API_KEY || "",
+      request,
+      ...(option(rest, "--route-id") ? { routeId: option(rest, "--route-id") } : {}),
+      ...(option(rest, "--task-type") ? { taskType: option(rest, "--task-type") } : {}),
+      ...(option(rest, "--task-fingerprint") ? { taskFingerprint: option(rest, "--task-fingerprint") } : {}),
+    });
+    if (ledger) {
+      console.error(`${appendRouteRecord(ledger, result.decision)} ${result.decision.route_id} -> ${ledger}`);
+      console.error(`${appendRouteRecord(ledger, result.observation)} ${result.observation.observation_id} -> ${ledger}`);
+    } else emit([result.decision, result.observation], output);
     return;
   }
 
@@ -100,6 +139,18 @@ export function runRouteCli(args: string[]): void {
     return;
   }
 
+  if (command === "evaluate") {
+    const input = rest[0];
+    const ledger = option(rest, "--ledger");
+    if (!input || !ledger) throw new Error("usage: ar evaluate <evaluation.json> --ledger routes.route.jsonl");
+    const draft = JSON.parse(readFileSync(input, "utf8")) as EvaluationDraft;
+    const state = foldRouteRecords(loadRouteRecords(ledger)).get(draft.route_id);
+    if (!state) throw new Error(`route_id not found: ${draft.route_id}`);
+    const observation = evaluationToObservation(draft, state.latest_observation?.outcome);
+    console.error(`${appendRouteRecord(ledger, observation)} ${observation.observation_id} -> ${ledger}`);
+    return;
+  }
+
   if (command === "validate") {
     const input = rest[0];
     if (!input) throw new Error("usage: ot route validate <receipt.route.json|routes.route.jsonl>");
@@ -132,6 +183,23 @@ export function runRouteCli(args: string[]): void {
     if (!input || !policyPath) throw new Error("usage: ot route simulate <routes.route.jsonl> --policy policy.json [-o report.json]");
     const policy = JSON.parse(readFileSync(policyPath, "utf8")) as RouteSimulationPolicy;
     emit(simulateRoutePolicy(loadRouteRecords(input), policy), option(rest, "-o", "--out"));
+    return;
+  }
+
+  if (command === "report") {
+    const input = rest[0];
+    if (!input) throw new Error("usage: ar report <routes.route.jsonl> [--route-id ID] [-o report.txt]");
+    emitText(formatRouteReport(loadRouteRecords(input), option(rest, "--route-id")), option(rest, "-o", "--out"));
+    return;
+  }
+
+  if (command === "task-pack") {
+    const [source, input] = rest;
+    if (source !== "exa" || !input) throw new Error("usage: ar task-pack exa <seeds.json> [-o task-pack.json]");
+    const raw = JSON.parse(readFileSync(input, "utf8")) as unknown;
+    const seeds = (Array.isArray(raw) ? raw : (raw as { seeds?: unknown }).seeds) as TaskSeed[];
+    const pack = await createExaTaskPack({ apiKey: process.env.EXA_API_KEY || "", seeds });
+    emit(pack, option(rest, "-o", "--out"));
     return;
   }
 

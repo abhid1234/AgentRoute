@@ -1,0 +1,14 @@
+{
+  "id": "faster-cheaper-same-bar",
+  "version": "illustrative-1",
+  "criteria": {
+    "max_cost_usd": 0.03,
+    "max_latency_ms": 2000,
+    "min_quality": 0.8
+  },
+  "weights": {
+    "quality": 0.4,
+    "latency": 0.3,
+    "cost": 0.3
+  }
+}

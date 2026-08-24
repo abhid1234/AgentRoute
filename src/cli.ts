@@ -6,7 +6,7 @@ import { runRouteCli } from "./route-cli.js";
 try {
   const args = process.argv.slice(2);
   if (args[0] === "route") args.shift();
-  runRouteCli(args);
+  await runRouteCli(args);
 } catch (error) {
   console.error(String((error as Error).message));
   process.exit(1);

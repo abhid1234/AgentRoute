@@ -10,7 +10,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "node --import tsx test/route.ts",
-    "conformance": "node route-conformance/check.mjs"
+    "conformance": "node route-conformance/check.mjs",
+    "demo:report": "node dist/cli.js report examples/can-auto-routing-prove-it.route.jsonl"
   },
   "devDependencies": {
     "tsx": "^4.20.3",

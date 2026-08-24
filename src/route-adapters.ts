@@ -20,6 +20,60 @@ const object = (value: unknown): Record<string, unknown> =>
 const string = (...values: unknown[]): string | undefined => values.find((value) => typeof value === "string" && value.length > 0) as string | undefined;
 const number = (...values: unknown[]): number | undefined => values.find((value) => typeof value === "number" && Number.isFinite(value)) as number | undefined;
 
+function openRouterCandidates(metadata: Record<string, unknown>): RouteCandidate[] {
+  const endpoints = object(metadata.endpoints);
+  if (!Array.isArray(endpoints.available)) return [];
+  return endpoints.available.flatMap((item, index) => {
+    const endpoint = object(item);
+    const model = string(endpoint.model);
+    if (!model) return [];
+    const provider = string(endpoint.provider);
+    return [{
+      id: `endpoint_${index + 1}`,
+      model,
+      ...(provider ? { provider } : {}),
+      ...(typeof endpoint.selected === "boolean" ? { eligible: true } : {}),
+    }];
+  });
+}
+
+function safeOpenRouterMetadata(metadata: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!Object.keys(metadata).length) return undefined;
+  const attempts = Array.isArray(metadata.attempts) ? metadata.attempts.flatMap((item) => {
+    const attempt = object(item);
+    const provider = string(attempt.provider);
+    const model = string(attempt.model);
+    const status = number(attempt.status);
+    if (!provider && !model && status === undefined) return [];
+    return [{
+      ...(provider ? { provider } : {}),
+      ...(model ? { model } : {}),
+      ...(status !== undefined ? { status } : {}),
+    }];
+  }) : [];
+  const pipeline = Array.isArray(metadata.pipeline) ? metadata.pipeline.flatMap((item) => {
+    const stage = object(item);
+    const type = string(stage.type);
+    const name = string(stage.name);
+    const summary = string(stage.summary);
+    if (!type && !name && !summary) return [];
+    return [{
+      ...(type ? { type } : {}),
+      ...(name ? { name } : {}),
+      ...(summary ? { summary } : {}),
+    }];
+  }) : [];
+  return {
+    ...(string(metadata.requested) ? { requested: string(metadata.requested) } : {}),
+    ...(string(metadata.strategy) ? { strategy: string(metadata.strategy) } : {}),
+    ...(string(metadata.region) ? { region: string(metadata.region) } : {}),
+    ...(number(metadata.attempt) !== undefined ? { attempt: number(metadata.attempt) } : {}),
+    ...(typeof metadata.is_byok === "boolean" ? { is_byok: metadata.is_byok } : {}),
+    ...(attempts.length ? { attempts } : {}),
+    ...(pipeline.length ? { pipeline } : {}),
+  };
+}
+
 function candidatesFrom(value: unknown): RouteCandidate[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item, index) => {
@@ -72,26 +126,45 @@ function base(options: RouteImportOptions): Pick<RouteDecision, "task"> & { rout
 export function fromOpenRouterRoute(event: unknown, options: RouteImportOptions = {}): RouteDecision {
   const value = object(event);
   const data = object(value.data);
+  const metadata = object(value.openrouter_metadata ?? data.openrouter_metadata);
   const selectedModel = string(value.model, data.model);
   if (!selectedModel) throw new Error("OpenRouter import requires a selected `model`");
-  const selectedProvider = string(value.provider_name, value.provider, data.provider_name, data.provider);
+  const endpointItems = Array.isArray(object(metadata.endpoints).available) ? object(metadata.endpoints).available as unknown[] : [];
+  const selectedEndpoint = object(endpointItems.find((item) => object(item).selected === true));
+  const selectedProvider = string(selectedEndpoint.provider, value.provider_name, value.provider, data.provider_name, data.provider);
   const selectedId = string(value.selected_candidate_id, data.selected_candidate_id) || "selected";
   const selected: RouteCandidate = {
     id: selectedId,
     model: selectedModel,
     ...(selectedProvider ? { provider: selectedProvider } : {}),
   };
-  const supplied = candidatesFrom(value.candidates ?? data.candidates);
+  const metadataCandidates = openRouterCandidates(metadata);
+  const supplied = metadataCandidates.length ? metadataCandidates : candidatesFrom(value.candidates ?? data.candidates);
   const candidates = withSelected(supplied, selected);
+  const selectedCandidate = candidates.find((candidate) =>
+    candidate.model === selectedModel && (!selectedProvider || candidate.provider === selectedProvider),
+  ) || candidates.find((candidate) => candidate.id === selectedId) || candidates[0];
+  const endpoints = object(metadata.endpoints);
+  const endpointTotal = number(endpoints.total);
+  const metadataIsComplete = metadataCandidates.length > 0 && endpointTotal === metadataCandidates.length;
+  const safeMetadata = safeOpenRouterMetadata(metadata);
   return createRouteDecision({
     ...base(options),
-    router: { name: options.routerName || "openrouter" },
-    source: { kind: "openrouter", fidelity: fidelity(candidates, options.completeCandidateSet), ...(string(value.id, data.id) ? { event_id: string(value.id, data.id) } : {}) },
+    router: {
+      name: options.routerName || "openrouter",
+      ...(string(metadata.strategy) ? { policy_id: string(metadata.strategy) } : {}),
+    },
+    source: {
+      kind: "openrouter",
+      fidelity: fidelity(candidates, options.completeCandidateSet || metadataIsComplete),
+      ...(string(value.id, data.id) ? { event_id: string(value.id, data.id) } : {}),
+    },
     candidates,
     selection: {
-      candidate_id: (candidates.find((candidate) => candidate.id === selectedId) || candidates.find((candidate) => candidate.model === selectedModel && candidate.provider === selectedProvider) || candidates[0]).id,
-      reason: options.reason || "Selected by OpenRouter; upstream rationale was not exposed",
+      candidate_id: selectedCandidate.id,
+      reason: options.reason || string(metadata.summary) || "Selected by OpenRouter; upstream rationale was not exposed",
     },
+    ...(safeMetadata ? { extensions: { openrouter: safeMetadata } } : {}),
   });
 }
 

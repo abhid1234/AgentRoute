@@ -181,6 +181,21 @@ Adapters default to `selected-only`. A supplied multi-candidate list is
 `partial` until the caller explicitly attests it was complete; only then may it
 be labeled `full`.
 
+The live OpenRouter capture path opts into the stable
+`X-OpenRouter-Metadata: enabled` contract. When the returned endpoint total
+matches the complete `endpoints.available` snapshot, that candidate evidence is
+`full`; a missing metadata object (including an OpenRouter cache hit) remains
+`selected-only`. AgentRoute allowlists the requested model, strategy, region,
+attempt count, endpoint candidates, attempt provider/model/status, and pipeline
+type/name/summary. It never copies the request prompt, response text, headers,
+credentials, raw pipeline data, or unknown metadata into a receipt.
+
+Exa task packs are separate input artifacts rather than route receipts. They
+retain source URLs and highlights to make fast-changing tasks reproducible, but
+do not grant Exa any routing authority. Evaluation is a later append-only
+observation; when a checklist score is added, the CLI carries forward the
+already measured model, provider, latency, cost, and safe tool-call metadata.
+
 ## OpenTrajectory references
 
 The optional `context` object can carry:
