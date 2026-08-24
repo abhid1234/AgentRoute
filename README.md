@@ -16,6 +16,8 @@ node dist/cli.js route explain examples/model-routing.route.jsonl
 node dist/cli.js route replay examples/model-routing.route.jsonl
 node dist/cli.js route simulate examples/model-routing.route.jsonl --policy examples/fast-cheap-policy.json
 node dist/cli.js report examples/can-auto-routing-prove-it.route.jsonl
+node dist/cli.js audit examples/can-auto-routing-prove-it.route.jsonl
+node dist/cli.js lab examples/can-auto-routing-prove-it.route.jsonl -o local/decision-lab.html
 ```
 
 The `ar` package binary accepts both `ar ...` and the historical `ar route ...` form.
@@ -29,10 +31,15 @@ The `ar` package binary accepts both `ar ...` and the historical `ar route ...` 
 - Live, non-streaming OpenRouter capture with stable router metadata and an allowlisted receipt boundary.
 - Exa-backed fresh task packs plus a deterministic evaluator contract.
 - Screenshot-ready receipt detail and routing reports that separate predicted from measured values.
+- Audit-readiness grading that reports whether receipts can support a defensible comparison.
+- A standalone, interactive Decision Lab with receipt search, candidate evidence, router traces, gaps, and a predicted policy sandbox.
 - Privacy-safe OTLP/JSON export for routing decision spans.
 - Examples, adversarial behavioral tests, and a conformance corpus.
 
 The format and UX constraints are documented in [`docs/agentroute-spec.md`](docs/agentroute-spec.md). The handoff records the stable surfaces and verification boundary.
+
+The system boundaries and the Requested → Selected → Observed → Proposed
+receipt rail are documented in [`docs/architecture.md`](docs/architecture.md).
 
 The first end-to-end demo kit is documented in
 [`docs/can-auto-routing-prove-it.md`](docs/can-auto-routing-prove-it.md). Its

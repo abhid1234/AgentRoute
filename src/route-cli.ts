@@ -2,8 +2,10 @@
 // free so receipts work in the same airlocked environments as OpenTrajectory.
 import { readFileSync, writeFileSync } from "node:fs";
 import { evaluationToObservation } from "./evaluation.js";
+import { writeDecisionLab } from "./decision-lab.js";
 import { captureOpenRouter } from "./openrouter-capture.js";
 import { fromLiteLLMRoute, fromOpenRouterRoute } from "./route-adapters.js";
+import { auditRouteRecords } from "./route-audit.js";
 import { formatRouteReport } from "./route-report.js";
 import { routeToOtel } from "./route-to-otel.js";
 import {
@@ -62,6 +64,8 @@ const HELP = `AgentRoute — auditable model-routing receipts
   ot route replay <routes.route.jsonl> [-o report.json]
   ot route simulate <routes.route.jsonl> --policy policy.json [-o report.json]
   ar report <routes.route.jsonl> [--route-id ID] [-o report.txt]
+  ar audit <routes.route.jsonl> [-o audit.json]
+  ar lab <routes.route.jsonl> -o decision-lab.html
   ar task-pack exa <seeds.json> [-o task-pack.json]
   ot route to-otel <receipt.route.json|routes.route.jsonl> [--route-id ID] [-o traces.json]
   ot route import <openrouter|litellm> <event.json> [-o receipt.route.json] [--complete-candidates]
@@ -190,6 +194,22 @@ export async function runRouteCli(args: string[]): Promise<void> {
     const input = rest[0];
     if (!input) throw new Error("usage: ar report <routes.route.jsonl> [--route-id ID] [-o report.txt]");
     emitText(formatRouteReport(loadRouteRecords(input), option(rest, "--route-id")), option(rest, "-o", "--out"));
+    return;
+  }
+
+  if (command === "audit") {
+    const input = rest[0];
+    if (!input) throw new Error("usage: ar audit <routes.route.jsonl> [-o audit.json]");
+    emit(auditRouteRecords(loadRouteRecords(input)), option(rest, "-o", "--out"));
+    return;
+  }
+
+  if (command === "lab") {
+    const input = rest[0];
+    const output = option(rest, "-o", "--out");
+    if (!input || !output) throw new Error("usage: ar lab <routes.route.jsonl> -o decision-lab.html");
+    writeDecisionLab(output, loadRouteRecords(input));
+    console.error(`wrote AgentRoute Decision Lab -> ${output}`);
     return;
   }
 

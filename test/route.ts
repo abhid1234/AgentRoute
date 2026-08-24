@@ -21,6 +21,8 @@ import {
 import { fromLiteLLMRoute, fromOpenRouterRoute } from "../src/route-adapters.js";
 import { captureOpenRouter } from "../src/openrouter-capture.js";
 import { evaluationToObservation, evaluateChecklist } from "../src/evaluation.js";
+import { buildDecisionLabModel, renderDecisionLab } from "../src/decision-lab.js";
+import { auditRouteRecords } from "../src/route-audit.js";
 import { formatReceiptDetail, formatRouteReport } from "../src/route-report.js";
 import { createExaTaskPack } from "../src/task-pack.js";
 import { routeToOtel } from "../src/route-to-otel.js";
@@ -129,6 +131,10 @@ try {
   const importedText = readFileSync(importOutput, "utf8");
   ok("CLI imports allowlisted router metadata", JSON.parse(importedText).source.fidelity === "selected-only");
   ok("CLI import does not copy unknown credentials", !importedText.includes("secret-never-copy") && !importedText.includes("authorization"));
+  const labOutput = join(scratch, "decision-lab.html");
+  execFileSync(process.execPath, ["--import", "tsx", cli, "lab", ledger, "-o", labOutput], { encoding: "utf8" });
+  const labText = readFileSync(labOutput, "utf8");
+  ok("CLI writes a standalone Decision Lab", labText.includes("AgentRoute Decision Lab") && labText.includes("route_test"));
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }
@@ -247,6 +253,25 @@ const detail = formatReceiptDetail({ decision: valid, observations: [], latest_o
 }) });
 ok("receipt detail separates predicted candidates from measured outcome", detail.includes("CANDIDATES (predicted at routing time)") && detail.includes("Outcome      success"));
 ok("routing report summarizes decisions and receipt detail", formatRouteReport([valid]).includes("Decisions 1 · observed 0") && formatRouteReport([valid]).includes("AGENTROUTE RECEIPT route_test"));
+
+console.log("audit readiness and Decision Lab");
+const audit = auditRouteRecords([captured.decision, captured.observation, selectedOnly], "2026-08-23T12:00:00.000Z");
+ok("audit readiness measures instrumentation rather than outcomes", audit.decisions === 2 && audit.metrics.find((item) => item.id === "outcome")?.covered === 1);
+ok("audit readiness identifies incomplete and unevaluated receipts", audit.gaps.some((gap) => gap.code === "candidate_evidence_incomplete") && audit.gaps.some((gap) => gap.code === "quality_missing"));
+const labModel = buildDecisionLabModel([captured.decision, captured.observation], "2026-08-23T12:00:00.000Z");
+ok("Decision Lab model exposes the four-stage routing evidence", labModel.routes[0].requested_model === "openrouter/auto" && labModel.routes[0].selected.provider === "Provider Live" && labModel.routes[0].outcome?.status === "success");
+const incompleteLabModel = buildDecisionLabModel([selectedOnly], "2026-08-23T12:00:00.000Z");
+ok("Decision Lab blocks policy proposals for incomplete evidence", incompleteLabModel.routes[0].policy_ready === false);
+const hostile = createRouteDecision({
+  ...valid,
+  route_id: "route_hostile",
+  task: { type: "security", description: "private prompt must stay hidden" },
+  selection: { ...valid.selection, reason: "</script><img src=x onerror=alert(1)>" },
+  extensions: { unknown_secret: "never-render-this" },
+});
+const hostileHtml = renderDecisionLab([hostile], "2026-08-23T12:00:00.000Z");
+ok("Decision Lab omits task descriptions and unknown extensions", !hostileHtml.includes("private prompt must stay hidden") && !hostileHtml.includes("never-render-this"));
+ok("Decision Lab escapes receipt text before embedding", !hostileHtml.includes("</script><img") && hostileHtml.includes("\\u003c/script\\u003e"));
 
 console.log("OpenTelemetry and published artifacts");
 const otelText = JSON.stringify(routeToOtel({ decision: valid, observations: [] }));
