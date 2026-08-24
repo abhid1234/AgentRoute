@@ -1,0 +1,22 @@
+flowchart TB
+  subgraph execution[Execution ecosystem]
+    APP[Agents and applications] --> GW[Gateways: OpenRouter, LiteLLM, Portkey, Vercel, Cloudflare]
+    GW --> PROVIDERS[Providers: OpenAI, Anthropic, Google, xAI, Bedrock, Fireworks]
+  end
+
+  GW -->|allowlisted route metadata| NORMALIZE[Connector normalizers]
+  PROVIDERS -->|measured outcome| OBSERVE[Observation builder]
+
+  subgraph agentroute[AgentRoute evidence and analysis]
+    NORMALIZE --> DECISION[Decision receipt]
+    DECISION --> LEDGER[(Append-only receipt ledger)]
+    OBSERVE --> LEDGER
+    LEDGER --> ANALYZE[Audit, replay, policy simulation]
+    ANALYZE --> LAB[Decision Lab]
+    LAB --> POLICY[Reviewed policy recommendation]
+  end
+
+  TASKS[Tasks: Exa, fixtures, production samples] --> EVAL[Evals: deterministic, human, Braintrust]
+  EVAL -->|score and evaluator version| OBSERVE
+  LEDGER -->|privacy-safe spans| OTEL[OpenTelemetry and trace backends]
+  POLICY -. human-approved export .-> GW

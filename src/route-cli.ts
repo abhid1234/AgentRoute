@@ -1,6 +1,8 @@
 // `ot route` command family. Parsing stays intentionally small and dependency
 // free so receipts work in the same airlocked environments as OpenTrajectory.
 import { readFileSync, writeFileSync } from "node:fs";
+import { formatConnectorCatalog, isConnectorCapability, isConnectorRole, isConnectorStatus, listConnectors } from "./connectors.js";
+import type { ConnectorFilters } from "./connectors.js";
 import { evaluationToObservation } from "./evaluation.js";
 import { writeDecisionLab } from "./decision-lab.js";
 import { captureOpenRouter } from "./openrouter-capture.js";
@@ -66,6 +68,7 @@ const HELP = `AgentRoute — auditable model-routing receipts
   ar report <routes.route.jsonl> [--route-id ID] [-o report.txt]
   ar audit <routes.route.jsonl> [-o audit.json]
   ar lab <routes.route.jsonl> -o decision-lab.html
+  ar connectors [--json] [--status available|planned] [--role ROLE] [--capability CAPABILITY]
   ar task-pack exa <seeds.json> [-o task-pack.json]
   ot route to-otel <receipt.route.json|routes.route.jsonl> [--route-id ID] [-o traces.json]
   ot route import <openrouter|litellm> <event.json> [-o receipt.route.json] [--complete-candidates]
@@ -210,6 +213,29 @@ export async function runRouteCli(args: string[]): Promise<void> {
     if (!input || !output) throw new Error("usage: ar lab <routes.route.jsonl> -o decision-lab.html");
     writeDecisionLab(output, loadRouteRecords(input));
     console.error(`wrote AgentRoute Decision Lab -> ${output}`);
+    return;
+  }
+
+  if (command === "connectors") {
+    const status = option(rest, "--status");
+    const role = option(rest, "--role");
+    const capability = option(rest, "--capability");
+    const filters: ConnectorFilters = {};
+    if (status) {
+      if (!isConnectorStatus(status)) throw new Error("--status must be available or planned");
+      filters.status = status;
+    }
+    if (role) {
+      if (!isConnectorRole(role)) throw new Error(`unknown connector role: ${role}`);
+      filters.role = role;
+    }
+    if (capability) {
+      if (!isConnectorCapability(capability)) throw new Error(`unknown connector capability: ${capability}`);
+      filters.capability = capability;
+    }
+    const connectors = listConnectors(filters);
+    if (rest.includes("--json")) emit(connectors, option(rest, "-o", "--out"));
+    else emitText(formatConnectorCatalog(connectors), option(rest, "-o", "--out"));
     return;
   }
 

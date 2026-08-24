@@ -18,6 +18,7 @@ import {
   replayRoutes,
   simulateRoutePolicy,
 } from "../src/route.js";
+import { formatConnectorCatalog, listConnectors } from "../src/connectors.js";
 import { fromLiteLLMRoute, fromOpenRouterRoute } from "../src/route-adapters.js";
 import { captureOpenRouter } from "../src/openrouter-capture.js";
 import { evaluationToObservation, evaluateChecklist } from "../src/evaluation.js";
@@ -135,6 +136,8 @@ try {
   execFileSync(process.execPath, ["--import", "tsx", cli, "lab", ledger, "-o", labOutput], { encoding: "utf8" });
   const labText = readFileSync(labOutput, "utf8");
   ok("CLI writes a standalone Decision Lab", labText.includes("AgentRoute Decision Lab") && labText.includes("route_test"));
+  const connectorText = execFileSync(process.execPath, ["--import", "tsx", cli, "connectors", "--status", "planned"], { encoding: "utf8" });
+  ok("CLI filters the connector catalog", connectorText.includes("Portkey AI Gateway") && !connectorText.includes("OpenRouter"));
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }
@@ -272,6 +275,13 @@ const hostile = createRouteDecision({
 const hostileHtml = renderDecisionLab([hostile], "2026-08-23T12:00:00.000Z");
 ok("Decision Lab omits task descriptions and unknown extensions", !hostileHtml.includes("private prompt must stay hidden") && !hostileHtml.includes("never-render-this"));
 ok("Decision Lab escapes receipt text before embedding", !hostileHtml.includes("</script><img") && hostileHtml.includes("\\u003c/script\\u003e"));
+
+console.log("connector catalog");
+const readyConnectors = listConnectors({ status: "available" });
+const plannedPolicyTargets = listConnectors({ status: "planned", role: "policy-target" });
+ok("connector catalog distinguishes tested paths from planned work", readyConnectors.some((item) => item.id === "openrouter") && !readyConnectors.some((item) => item.id === "portkey"));
+ok("connector catalog exposes future policy targets without claiming support", plannedPolicyTargets.map((item) => item.id).join(",") === "portkey,vercel-ai-gateway");
+ok("connector catalog renders an honest status legend", formatConnectorCatalog().includes("READY means a tested repository path exists"));
 
 console.log("OpenTelemetry and published artifacts");
 const otelText = JSON.stringify(routeToOtel({ decision: valid, observations: [] }));

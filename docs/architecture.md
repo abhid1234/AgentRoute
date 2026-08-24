@@ -6,41 +6,31 @@ routing. Gateways keep executing requests; AgentRoute makes their decisions
 auditable.
 
 ```mermaid
-flowchart LR
-  subgraph execution[Execution plane — owned by the application]
-    A[Agent request] --> R[Router or gateway]
-    R --> M[Model response]
-    R --> X[Routing metadata]
+flowchart TB
+  subgraph execution[Execution ecosystem]
+    APP[Agents and applications] --> GW[Gateways: OpenRouter, LiteLLM, Portkey, Vercel, Cloudflare]
+    GW --> PROVIDERS[Providers: OpenAI, Anthropic, Google, xAI, Bedrock, Fireworks]
   end
 
-  subgraph evidence[Evidence plane — append only]
-    X --> N[Normalizer]
-    N --> D[Decision receipt]
-    M --> O[Measured observation]
-    D --> L[(Receipt ledger)]
-    O --> L
+  GW -->|allowlisted route metadata| NORMALIZE[Connector normalizers]
+  PROVIDERS -->|measured outcome| OBSERVE[Observation builder]
+
+  subgraph agentroute[AgentRoute evidence and analysis]
+    NORMALIZE --> DECISION[Decision receipt]
+    DECISION --> LEDGER[(Append-only receipt ledger)]
+    OBSERVE --> LEDGER
+    LEDGER --> ANALYZE[Audit, replay, policy simulation]
+    ANALYZE --> LAB[Decision Lab]
+    LAB --> POLICY[Reviewed policy recommendation]
   end
 
-  subgraph evaluation[Evaluation plane]
-    T[Fresh task pack] --> E[Outcome evaluator]
-    M --> E
-    E --> O
-  end
-
-  subgraph analysis[Analysis plane]
-    L --> Q[Audit readiness]
-    L --> P[Replay and policy simulation]
-    P --> C[Predicted comparisons]
-  end
-
-  subgraph experience[Experience plane]
-    Q --> LAB[Decision Lab]
-    C --> LAB
-    LAB --> REC[Proposed policy change]
-  end
-
-  REC -. human review and router-specific rollout .-> R
+  TASKS[Tasks: Exa, fixtures, production samples] --> EVAL[Evals: deterministic, human, Braintrust]
+  EVAL -->|score and evaluator version| OBSERVE
+  LEDGER -->|privacy-safe spans| OTEL[OpenTelemetry and trace backends]
+  POLICY -. human-approved export .-> GW
 ```
+
+The rendered and editable versions live in `diagrams/agentroute-integration-plane.*`.
 
 ## The receipt rail
 
