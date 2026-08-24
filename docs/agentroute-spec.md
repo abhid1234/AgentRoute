@@ -196,6 +196,19 @@ do not grant Exa any routing authority. Evaluation is a later append-only
 observation; when a checklist score is added, the CLI carries forward the
 already measured model, provider, latency, cost, and safe tool-call metadata.
 
+## Audit readiness and Decision Lab
+
+`ar audit` measures whether a ledger has enough instrumentation to support its
+analysis. It reports outcome, quality, fidelity, policy-score, latency, cost,
+and fallback coverage plus per-route evidence gaps. The resulting A–D grade is
+explicitly an instrumentation grade, not a model-quality score.
+
+`ar lab` renders a standalone local HTML investigation surface. Its view model
+omits task descriptions, candidate endpoints, context, unknown extensions, and
+arbitrary outcome metadata. The in-browser policy sandbox re-ranks only the
+recorded full candidate set and labels its result predicted until the proposed
+route has a measured observation.
+
 ## OpenTrajectory references
 
 The optional `context` object can carry:
