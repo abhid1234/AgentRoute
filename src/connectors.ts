@@ -1,4 +1,5 @@
-export type ConnectorStatus = "available" | "planned";
+export type ConnectorStatus = "available" | "partial" | "planned";
+export type ConnectorCapabilityStatus = "available" | "planned";
 export type ConnectorDirection = "inbound" | "outbound" | "bidirectional";
 export type ConnectorRole =
   | "router"
@@ -10,6 +11,7 @@ export type ConnectorRole =
 
 export type ConnectorCapability =
   | "decision-import"
+  | "observation-import"
   | "live-capture"
   | "task-pack"
   | "trace-export"
@@ -23,6 +25,7 @@ export interface AgentRouteConnector {
   direction: ConnectorDirection;
   roles: ConnectorRole[];
   capabilities: ConnectorCapability[];
+  capability_status?: Partial<Record<ConnectorCapability, ConnectorCapabilityStatus>>;
   transport: string;
   summary: string;
   docs_url: string;
@@ -34,9 +37,9 @@ export interface ConnectorFilters {
   capability?: ConnectorCapability;
 }
 
-export const CONNECTOR_STATUSES = ["available", "planned"] as const;
+export const CONNECTOR_STATUSES = ["available", "partial", "planned"] as const;
 export const CONNECTOR_ROLES = ["router", "gateway", "task-source", "telemetry", "evaluator", "policy-target"] as const;
-export const CONNECTOR_CAPABILITIES = ["decision-import", "live-capture", "task-pack", "trace-export", "evaluation-import", "policy-export"] as const;
+export const CONNECTOR_CAPABILITIES = ["decision-import", "observation-import", "live-capture", "task-pack", "trace-export", "evaluation-import", "policy-export"] as const;
 
 export const isConnectorStatus = (value: string): value is ConnectorStatus =>
   (CONNECTOR_STATUSES as readonly string[]).includes(value);
@@ -108,45 +111,47 @@ export const AGENTROUTE_CONNECTORS: readonly AgentRouteConnector[] = [
   {
     id: "portkey",
     name: "Portkey AI Gateway",
-    status: "planned",
+    status: "partial",
     direction: "bidirectional",
     roles: ["router", "gateway", "policy-target"],
-    capabilities: ["decision-import", "policy-export"],
+    capabilities: ["decision-import", "observation-import", "policy-export"],
+    capability_status: { "decision-import": "available", "observation-import": "available", "policy-export": "planned" },
     transport: "gateway logs / config export",
-    summary: "Candidate for retry, fallback, conditional-routing, and policy recommendation evidence.",
+    summary: "Imports allowlisted log/response evidence; reviewed policy export remains planned.",
     docs_url: "https://portkey.ai/docs/product/ai-gateway",
   },
   {
     id: "vercel-ai-gateway",
     name: "Vercel AI Gateway",
-    status: "planned",
+    status: "partial",
     direction: "bidirectional",
     roles: ["router", "gateway", "policy-target"],
-    capabilities: ["decision-import", "policy-export"],
+    capabilities: ["decision-import", "observation-import", "policy-export"],
+    capability_status: { "decision-import": "available", "observation-import": "available", "policy-export": "planned" },
     transport: "provider metadata / provider options",
-    summary: "Candidate for provider-order, provider-filter, and fallback decision receipts.",
+    summary: "Imports provider-order, provider-filter, and fallback decision evidence; policy export remains planned.",
     docs_url: "https://vercel.com/docs/ai-gateway",
   },
   {
     id: "cloudflare-ai-gateway",
     name: "Cloudflare AI Gateway",
-    status: "planned",
+    status: "available",
     direction: "inbound",
     roles: ["gateway", "telemetry"],
-    capabilities: ["decision-import"],
+    capabilities: ["decision-import", "observation-import"],
     transport: "logs / analytics / OpenTelemetry",
-    summary: "Candidate for retry, fallback, cache, cost, error, and latency observations.",
+    summary: "Imports documented log fields as routing decisions and measured operational observations.",
     docs_url: "https://developers.cloudflare.com/ai-gateway/",
   },
   {
     id: "braintrust",
     name: "Braintrust",
-    status: "planned",
+    status: "available",
     direction: "inbound",
     roles: ["evaluator", "telemetry"],
     capabilities: ["evaluation-import"],
     transport: "experiment / trace results",
-    summary: "Candidate for immutable experiment scores and production evaluation observations.",
+    summary: "Imports numeric experiment and online scores without retaining prompts, outputs, or reasoning.",
     docs_url: "https://www.braintrust.dev/docs/evaluate",
   },
 ];
@@ -156,19 +161,23 @@ export function listConnectors(filters: ConnectorFilters = {}): AgentRouteConnec
     (!filters.status || connector.status === filters.status) &&
     (!filters.role || connector.roles.includes(filters.role)) &&
     (!filters.capability || connector.capabilities.includes(filters.capability))
-  ).map((connector) => ({ ...connector, roles: [...connector.roles], capabilities: [...connector.capabilities] }));
+  ).map((connector) => ({ ...connector, roles: [...connector.roles], capabilities: [...connector.capabilities], ...(connector.capability_status ? { capability_status: { ...connector.capability_status } } : {}) }));
 }
 
 export function formatConnectorCatalog(connectors: readonly AgentRouteConnector[] = AGENTROUTE_CONNECTORS): string {
   const rows = connectors.map((connector) => {
-    const state = connector.status === "available" ? "READY" : "PLANNED";
-    return `${state.padEnd(7)}  ${connector.name.padEnd(24)}  ${connector.direction.padEnd(13)}  ${connector.capabilities.join(", ")}`;
+    const state = connector.status === "available" ? "READY" : connector.status === "partial" ? "PARTIAL" : "PLANNED";
+    const capabilities = connector.capabilities.map((capability) => {
+      const status = connector.capability_status?.[capability];
+      return status ? `${capability}:${status === "available" ? "ready" : "planned"}` : capability;
+    });
+    return `${state.padEnd(7)}  ${connector.name.padEnd(24)}  ${connector.direction.padEnd(13)}  ${capabilities.join(", ")}`;
   });
   return [
     "AGENTROUTE CONNECTOR MAP",
     "STATUS   CONNECTOR                 DIRECTION      CAPABILITIES",
     ...rows,
     "",
-    "READY means a tested repository path exists. PLANNED is architecture, not an integration claim.",
+    "READY means every listed path is tested. PARTIAL labels each ready/planned capability. PLANNED is architecture only.",
   ].join("\n");
 }

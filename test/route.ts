@@ -19,9 +19,17 @@ import {
   simulateRoutePolicy,
 } from "../src/route.js";
 import { formatConnectorCatalog, listConnectors } from "../src/connectors.js";
-import { fromLiteLLMRoute, fromOpenRouterRoute } from "../src/route-adapters.js";
+import {
+  fromCloudflareAiGatewayRoute,
+  fromLiteLLMRoute,
+  fromOpenRouterRoute,
+  fromPortkeyRoute,
+  fromVercelAiGatewayRoute,
+  importCloudflareAiGatewayRoute,
+  importPortkeyRoute,
+} from "../src/route-adapters.js";
 import { captureOpenRouter } from "../src/openrouter-capture.js";
-import { evaluationToObservation, evaluateChecklist } from "../src/evaluation.js";
+import { evaluationToObservation, evaluateChecklist, fromBraintrustEvaluation } from "../src/evaluation.js";
 import { buildDecisionLabModel, renderDecisionLab } from "../src/decision-lab.js";
 import { auditRouteRecords } from "../src/route-audit.js";
 import { formatReceiptDetail, formatRouteReport } from "../src/route-report.js";
@@ -136,8 +144,23 @@ try {
   execFileSync(process.execPath, ["--import", "tsx", cli, "lab", ledger, "-o", labOutput], { encoding: "utf8" });
   const labText = readFileSync(labOutput, "utf8");
   ok("CLI writes a standalone Decision Lab", labText.includes("AgentRoute Decision Lab") && labText.includes("route_test"));
-  const connectorText = execFileSync(process.execPath, ["--import", "tsx", cli, "connectors", "--status", "planned"], { encoding: "utf8" });
+  const connectorText = execFileSync(process.execPath, ["--import", "tsx", cli, "connectors", "--status", "partial"], { encoding: "utf8" });
   ok("CLI filters the connector catalog", connectorText.includes("Portkey AI Gateway") && !connectorText.includes("OpenRouter"));
+  const cloudflareEvent = join(scratch, "cloudflare.json");
+  const gatewayLedger = join(scratch, "gateway.route.jsonl");
+  writeFileSync(cloudflareEvent, JSON.stringify({ id: "cf_cli", created_at: "2026-08-23T12:00:00.000Z", model: "workers-ai/model", provider: "workers-ai", success: true, status_code: 200, duration: 41, cost: 0.004, tokens_in: 12, tokens_out: 8, metadata: "private prompt", request: { body: "secret" } }));
+  execFileSync(process.execPath, ["--import", "tsx", cli, "ingest", "cloudflare-ai-gateway", cloudflareEvent, "--ledger", gatewayLedger], { encoding: "utf8" });
+  const gatewayText = readFileSync(gatewayLedger, "utf8");
+  ok("CLI ingests gateway decisions and observations", parseRouteRecords(gatewayText).length === 2 && gatewayText.includes("41"));
+  ok("CLI gateway ingest excludes source content and unknown metadata", !gatewayText.includes("private prompt") && !gatewayText.includes("secret"));
+  const braintrustEvent = join(scratch, "braintrust.json");
+  writeFileSync(braintrustEvent, JSON.stringify({ route_id: JSON.parse(gatewayText.split("\n")[0]).route_id, experiment_name: "quality-gate", created_at: "2026-08-23T12:00:01.000Z", scores: { correctness: 0.9, style: { score: 0.7 } }, input: "private input", output: "private output" }));
+  execFileSync(process.execPath, ["--import", "tsx", cli, "evaluate", "braintrust", braintrustEvent, "--ledger", gatewayLedger], { encoding: "utf8" });
+  const evaluatedGatewayText = readFileSync(gatewayLedger, "utf8");
+  ok("CLI imports Braintrust numeric scores as an evaluation observation", parseRouteRecords(evaluatedGatewayText).length === 3 && evaluatedGatewayText.includes('"quality":0.8'));
+  ok("CLI Braintrust import excludes inputs and outputs", !evaluatedGatewayText.includes("private input") && !evaluatedGatewayText.includes("private output"));
+  execFileSync(process.execPath, ["--import", "tsx", cli, "evaluate", "braintrust", braintrustEvent, "--ledger", gatewayLedger], { encoding: "utf8" });
+  ok("CLI Braintrust retries are idempotent", parseRouteRecords(readFileSync(gatewayLedger, "utf8")).length === 3);
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }
@@ -178,6 +201,57 @@ ok("OpenRouter metadata allowlist drops unknown and nested sensitive fields", !r
 const litellm = fromLiteLLMRoute({ model: "model-l", litellm_params: { custom_llm_provider: "provider-l" }, response_cost: 0.004, api_key: "must-not-copy" });
 ok("LiteLLM maps selected metadata", litellm.candidates[0].model === "model-l" && litellm.candidates[0].provider === "provider-l");
 ok("LiteLLM adapter does not retain source secrets", !JSON.stringify(litellm).includes("api_key"));
+const hostileGatewayFields = { authorization: "Bearer secret", api_key: "sk-secret", prompt: "private prompt", response_body: "private answer", metadata: { user: "private@example.com" } };
+const portkeyEvent = {
+  trace_id: "pk_trace_1",
+  created_at: "2026-08-23T10:00:00.000Z",
+  ai_model: "claude-sonnet",
+  provider: "anthropic",
+  fallback_models: ["gpt-5", "gemini-pro"],
+  retry_success_count: 1,
+  cache_status: "MISS",
+  response_time: 215,
+  cost: 2.5,
+  status_code: 200,
+  ...hostileGatewayFields,
+};
+const portkey = fromPortkeyRoute(portkeyEvent);
+const portkeyBundle = importPortkeyRoute(portkeyEvent, { portkeyCostUnit: "cents" });
+const portkeyWithoutUnit = importPortkeyRoute(portkeyEvent);
+ok("Portkey imports selected model plus fallback evidence", portkey.candidates.length === 3 && portkey.selection.fallback_order?.length === 2 && portkey.source.fidelity === "partial");
+ok("Portkey produces stable IDs and measured observations", portkey.route_id === fromPortkeyRoute(portkeyEvent).route_id && portkeyBundle.observation?.outcome.latency_ms === 215 && portkeyBundle.observation?.outcome.cost_usd === 0.025);
+ok("Portkey generic cost is omitted without an explicit unit", portkeyWithoutUnit.observation?.outcome.cost_usd === undefined);
+ok("Portkey allowlist rejects credentials, content, and arbitrary metadata", !JSON.stringify(portkeyBundle).includes("sk-secret") && !JSON.stringify(portkeyBundle).includes("private prompt") && !JSON.stringify(portkeyBundle).includes("private@example.com"));
+const vercel = fromVercelAiGatewayRoute({
+  id: "vercel_req_1",
+  created_at: "2026-08-23T10:01:00.000Z",
+  model: "anthropic/claude-sonnet-4",
+  providerMetadata: { gateway: { provider: "anthropic", requestId: "vercel_req_1", secret: "drop-me" } },
+  providerOptions: { order: ["anthropic", "vertex"], only: ["anthropic", "vertex"], models: ["openai/gpt-5"] },
+  user: "private-user",
+  ...hostileGatewayFields,
+});
+ok("Vercel AI Gateway imports provider routing controls conservatively", vercel.extensions?.vercel_ai_gateway !== undefined && vercel.candidates.length === 2 && vercel.source.fidelity === "partial");
+ok("Vercel AI Gateway allowlist rejects users, secrets, prompts, and bodies", !JSON.stringify(vercel).includes("private-user") && !JSON.stringify(vercel).includes("drop-me") && !JSON.stringify(vercel).includes("private prompt"));
+const cloudflareEvent = {
+  id: "cf_log_1",
+  created_at: "2026-08-23T10:02:00.000Z",
+  model: "@cf/meta/llama",
+  provider: "workers-ai",
+  success: true,
+  status_code: 200,
+  duration: 88,
+  cost: 0.004,
+  tokens_in: 20,
+  tokens_out: 10,
+  cached: true,
+  ...hostileGatewayFields,
+};
+const cloudflare = fromCloudflareAiGatewayRoute(cloudflareEvent);
+const cloudflareBundle = importCloudflareAiGatewayRoute(cloudflareEvent);
+ok("Cloudflare AI Gateway imports documented decision and operational fields", cloudflare.source.event_id === "cf_log_1" && cloudflareBundle.observation?.outcome.latency_ms === 88 && cloudflareBundle.observation?.outcome.metadata?.cached === true);
+ok("Cloudflare ambiguous cost is not misreported as USD", cloudflareBundle.observation?.outcome.cost_usd === undefined);
+ok("Cloudflare allowlist rejects payloads, credentials, and metadata", !JSON.stringify(cloudflareBundle).includes("private answer") && !JSON.stringify(cloudflareBundle).includes("Bearer secret") && !JSON.stringify(cloudflareBundle).includes("private@example.com"));
 
 console.log("live capture, grounding, evaluation, and reports");
 let captureRequest: { url?: string; headers?: Record<string, string>; body?: string } = {};
@@ -240,6 +314,21 @@ const evaluated = evaluateChecklist({
   ],
 });
 ok("evaluator contract produces weighted outcome quality", evaluated.status === "partial" && evaluated.quality === 0.75);
+const braintrustDraft = fromBraintrustEvaluation({
+  route_id: valid.route_id,
+  experiment_name: "answer-quality",
+  evaluator_version: "2026-08-23",
+  created_at: "2026-08-22T10:00:02.000Z",
+  span_id: "span_1",
+  scores: { correctness: 0.9, citations: { score: 0.7 }, ignored: "not numeric" },
+  input: "private input",
+  output: "private output",
+  metadata: { route_id: valid.route_id, api_key: "secret" },
+});
+const braintrustText = JSON.stringify(braintrustDraft);
+ok("Braintrust preserves numeric scores instead of flattening them to booleans", evaluateChecklist(braintrustDraft).quality === 0.8);
+ok("Braintrust derives a stable observation ID from the external span", braintrustDraft.observation_id === fromBraintrustEvaluation({ route_id: valid.route_id, span_id: "span_1", scores: { correctness: 1 } }).observation_id);
+ok("Braintrust allowlist excludes inputs, outputs, reasoning, and arbitrary metadata", !braintrustText.includes("private input") && !braintrustText.includes("private output") && !braintrustText.includes("api_key"));
 const evaluationObservation = evaluationToObservation({
   route_id: valid.route_id,
   evaluator: { id: "demo-checklist" },
@@ -278,10 +367,11 @@ ok("Decision Lab escapes receipt text before embedding", !hostileHtml.includes("
 
 console.log("connector catalog");
 const readyConnectors = listConnectors({ status: "available" });
-const plannedPolicyTargets = listConnectors({ status: "planned", role: "policy-target" });
-ok("connector catalog distinguishes tested paths from planned work", readyConnectors.some((item) => item.id === "openrouter") && !readyConnectors.some((item) => item.id === "portkey"));
-ok("connector catalog exposes future policy targets without claiming support", plannedPolicyTargets.map((item) => item.id).join(",") === "portkey,vercel-ai-gateway");
-ok("connector catalog renders an honest status legend", formatConnectorCatalog().includes("READY means a tested repository path exists"));
+const partialPolicyTargets = listConnectors({ status: "partial", role: "policy-target" });
+ok("connector catalog distinguishes complete from capability-partial work", readyConnectors.some((item) => item.id === "cloudflare-ai-gateway") && !readyConnectors.some((item) => item.id === "portkey"));
+ok("connector catalog marks vendor imports ready while policy export remains planned", partialPolicyTargets.map((item) => item.id).join(",") === "portkey,vercel-ai-gateway" && partialPolicyTargets.every((item) => item.capability_status?.["policy-export"] === "planned"));
+ok("connector catalog exposes measured gateway observation import", listConnectors({ capability: "observation-import" }).map((item) => item.id).join(",") === "portkey,vercel-ai-gateway,cloudflare-ai-gateway");
+ok("connector catalog renders an honest capability status legend", formatConnectorCatalog().includes("decision-import:ready") && formatConnectorCatalog().includes("policy-export:planned"));
 
 console.log("OpenTelemetry and published artifacts");
 const otelText = JSON.stringify(routeToOtel({ decision: valid, observations: [] }));
@@ -295,6 +385,13 @@ const demoCorpus = parseRouteRecords(readFileSync(join(root, "examples/can-auto-
 ok("Auto Routing demo fixture is conformant and explicitly illustrative", validateRouteLedger(demoCorpus).valid && demoCorpus.every((record) => record.extensions?.demo_fixture === "illustrative-only"));
 const demoSeeds = JSON.parse(readFileSync(join(root, "examples/can-auto-routing-prove-it.tasks.json"), "utf8"));
 ok("Auto Routing demo defines ten grounded task seeds", Array.isArray(demoSeeds.seeds) && demoSeeds.seeds.length === 10);
+const importFixtures = {
+  portkey: importPortkeyRoute(JSON.parse(readFileSync(join(root, "examples/imports/portkey-log.json"), "utf8")), { routeId: "route_fixture_portkey" }),
+  vercel: fromVercelAiGatewayRoute(JSON.parse(readFileSync(join(root, "examples/imports/vercel-ai-gateway-event.json"), "utf8")), { routeId: "route_fixture_vercel" }),
+  cloudflare: importCloudflareAiGatewayRoute(JSON.parse(readFileSync(join(root, "examples/imports/cloudflare-ai-gateway-log.json"), "utf8")), { routeId: "route_fixture_cloudflare" }),
+  braintrust: fromBraintrustEvaluation(JSON.parse(readFileSync(join(root, "examples/imports/braintrust-score.json"), "utf8")), { routeId: "route_fixture_braintrust" }),
+};
+ok("bundled vendor fixtures remain importable", validateRouteLedger([importFixtures.portkey.decision, importFixtures.portkey.observation!]).valid && validateRouteRecord(importFixtures.vercel).valid && validateRouteLedger([importFixtures.cloudflare.decision, importFixtures.cloudflare.observation!]).valid && importFixtures.braintrust.checks.length === 3);
 const schema = JSON.parse(readFileSync(join(root, "schema/routedecision-0.1.schema.json"), "utf8"));
 ok("schema publishes draft 2020-12 and both record forms", schema.$schema.includes("2020-12") && schema.$defs.decision && schema.$defs.observation);
 const requiredStayAligned = (record: Record<string, unknown>, required: string[]): boolean => required.every((field) => {

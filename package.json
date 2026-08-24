@@ -4,6 +4,14 @@
   "private": true,
   "description": "Portable, auditable model-routing receipts and replay analytics.",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "bin": {
     "ar": "./dist/cli.js"
   },

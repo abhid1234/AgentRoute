@@ -1,0 +1,15 @@
+{
+  "trace_id": "demo-portkey-trace",
+  "created_at": "2026-08-23T12:00:00.000Z",
+  "ai_model": "anthropic/claude-sonnet",
+  "provider": "anthropic",
+  "fallback_models": [
+    "openai/gpt-5",
+    "google/gemini-pro"
+  ],
+  "retry_success_count": 1,
+  "cache_status": "MISS",
+  "response_time": 184,
+  "cost_usd": 0.0042,
+  "status_code": 200
+}

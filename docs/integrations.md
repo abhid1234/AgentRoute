@@ -5,9 +5,9 @@ gateway can contribute a decision receipt, an evaluator can append an
 observation, and a telemetry backend can receive a sanitized span. Policy
 changes flow back only through a reviewed export adapter.
 
-Run `ar connectors` for the catalog embedded in the release. `READY` means the
-repository contains a tested path. `PLANNED` means the external system has a
-useful contract surface, but no working adapter is claimed yet.
+Run `ar connectors` for the catalog embedded in the release. `READY` means all
+listed paths are tested. `PARTIAL` labels each capability separately, such as
+`decision-import:ready` and `policy-export:planned`.
 
 | System | Role | State | Most useful AgentRoute surface |
 |---|---|---:|---|
@@ -16,26 +16,27 @@ useful contract surface, but no working adapter is claimed yet.
 | LiteLLM | Router and gateway | Ready | Callback/logging metadata import |
 | Exa | Task source | Ready | Fresh, source-linked evaluation task packs |
 | OpenTelemetry | Telemetry | Ready | Privacy-safe routing-decision span export |
-| Portkey | Gateway and policy target | Planned | Retry, fallback, conditional-route evidence and reviewed config export |
-| Vercel AI Gateway | Gateway and policy target | Planned | Provider order, provider filtering, and fallback evidence |
-| Cloudflare AI Gateway | Gateway and telemetry | Planned | Retry, fallback, cache, cost, error, and latency observations |
-| Braintrust | Evaluator and telemetry | Planned | Immutable experiment scores and online evaluation observations |
+| Portkey | Gateway and policy target | Partial | Decision and observation import ready; reviewed config export planned |
+| Vercel AI Gateway | Gateway and policy target | Partial | Provider/fallback decision import ready; policy export planned |
+| Cloudflare AI Gateway | Gateway and telemetry | Ready | Log import into decisions plus measured operational observations |
+| Braintrust | Evaluator and telemetry | Ready | Numeric experiment and online-score evaluation import |
 
 ## Why these additions
 
-- **Portkey** exposes routing primitives such as fallbacks, conditional routes,
-  retries, circuit breakers, and canary tests. Those are valuable receipt
-  evidence, but AgentRoute should not become the gateway.
-- **Vercel AI Gateway** exposes provider filtering, ordering, and fallback
-  controls across multiple providers. A future adapter can explain which
-  ordering was requested and which provider actually handled the call.
-- **Cloudflare AI Gateway** exposes logs, analytics, cost, error, caching, and
-  OpenTelemetry surfaces. Its logs may include prompts and responses, so an
-  AgentRoute adapter must remain allowlist-only and default to excluding
-  content.
+- **Portkey** supplies selected model/provider, fallback, retry, cache, latency,
+  and cost evidence. AgentRoute imports those facts from saved logs or response
+  envelopes; it does not become the gateway or require a Portkey account.
+- **Vercel AI Gateway** supplies provider filtering, ordering, fallback models,
+  and the selected provider/model. The importer recognizes conservative field
+  aliases across saved log and provider-metadata envelopes.
+- **Cloudflare AI Gateway** supplies documented log fields for status, latency,
+  cache, token counts, provider, and model. Because logs can contain prompts
+  and responses, the importer discards the source envelope and arbitrary
+  metadata. An ambiguous `cost` field is not treated as USD; only `cost_usd`
+  is imported as dollars.
 - **Braintrust** treats evaluation experiments as immutable comparable records
-  and supports online scoring. AgentRoute can import only the evaluator ID,
-  version, score, and external reference needed for an observation.
+  and supports online scoring. AgentRoute imports evaluator identity, version,
+  numeric 0..1 scores, timestamp, and external span reference only.
 - **OpenTelemetry** remains the neutral outbound seam. The GenAI conventions
   warn that message and tool attributes may contain sensitive content, so
   AgentRoute's export stays narrower than a general LLM trace.
@@ -60,8 +61,52 @@ A new adapter is not `READY` until it has all of the following:
 5. a documented upstream API/version assumption;
 6. conformance and CLI coverage.
 
-Official references: [Portkey AI Gateway](https://portkey.ai/docs/product/ai-gateway),
-[Vercel AI Gateway](https://vercel.com/docs/ai-gateway/models-and-providers/provider-options),
-[Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/),
+## Offline import commands
+
+No vendor keys are read by these commands. Export or save the source JSON using
+the vendor's own tooling, then run:
+
+```bash
+ar route import portkey portkey-event.json -o decision.route.json
+ar route import vercel-ai-gateway vercel-event.json -o decision.route.json
+ar route import cloudflare-ai-gateway cloudflare-log.json -o decision.route.json
+
+# Writes a decision and, when metrics exist, one observation.
+ar ingest portkey portkey-event.json --ledger routes.route.jsonl
+# If an older export uses generic `cost` in cents, attest the unit explicitly:
+ar ingest portkey portkey-event.json --portkey-cost-unit cents --ledger routes.route.jsonl
+ar ingest vercel-ai-gateway vercel-event.json --ledger routes.route.jsonl
+ar ingest cloudflare-ai-gateway cloudflare-log.json --ledger routes.route.jsonl
+
+# Appends a score observation to an existing route.
+ar evaluate braintrust braintrust-score.json --ledger routes.route.jsonl
+```
+
+Use `--complete-candidates` only when the source candidate list is a complete
+routing-time snapshot. Otherwise the importer records `partial` or
+`selected-only` fidelity and blocks unsupported counterfactual claims.
+
+## Accepted source fields
+
+The adapters intentionally support a small, explicit surface. Unknown fields
+are dropped, not copied into `extensions`.
+
+| Source | Decision allowlist | Observation allowlist | Unit assumptions |
+|---|---|---|---|
+| Portkey | trace ID, model, provider, fallback models, retry/cache/option index, config ID | status, response time, direct `cost_usd`, explicitly unit-tagged generic `cost`, token counts | `response_time` is milliseconds; generic `cost` is omitted unless `--portkey-cost-unit usd|cents` is supplied |
+| Vercel AI Gateway | request ID, model, selected provider, provider `order`/`only`, fallback models | status, `latency_ms`, `cost_usd`, token counts | no generic `cost` field is interpreted |
+| Cloudflare AI Gateway | log ID, timestamp, model, provider, explicitly supplied candidates | success/status, duration, `cost_usd`, token counts, cache state | `duration` is milliseconds; generic `cost` is omitted because export units may vary |
+| Braintrust | route ID, evaluator/experiment identity, evaluator version, timestamp, span ID, numeric scores | mapped 0..1 quality and safe check summaries | default pass threshold is 0.5; the numeric score itself remains authoritative |
+
+The Vercel importer accepts both snake-case and camel-case aliases because
+saved AI SDK provider metadata and exported gateway logs use different envelope
+shapes. This is a compatibility layer, not a promise to retain the original
+document.
+
+Official references: [Portkey response schema](https://portkey.ai/docs/api-reference/inference-api/response-schema),
+[Portkey logs](https://portkey.ai/docs/product/observability/logs),
+[Vercel AI Gateway provider options](https://vercel.com/docs/ai-gateway/models-and-providers/provider-options),
+[Cloudflare AI Gateway logs API](https://developers.cloudflare.com/api/resources/ai_gateway/subresources/logs/),
+[Cloudflare logging](https://developers.cloudflare.com/ai-gateway/observability/logging/),
 [Braintrust evaluations](https://www.braintrust.dev/docs/evaluate), and
 [OpenTelemetry GenAI attributes](https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/).

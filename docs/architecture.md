@@ -7,27 +7,23 @@ auditable.
 
 ```mermaid
 flowchart TB
-  subgraph execution[Execution ecosystem]
-    APP[Agents and applications] --> GW[Gateways: OpenRouter, LiteLLM, Portkey, Vercel, Cloudflare]
-    GW --> PROVIDERS[Providers: OpenAI, Anthropic, Google, xAI, Bedrock, Fireworks]
-  end
-
-  GW -->|allowlisted route metadata| NORMALIZE[Connector normalizers]
-  PROVIDERS -->|measured outcome| OBSERVE[Observation builder]
-
-  subgraph agentroute[AgentRoute evidence and analysis]
-    NORMALIZE --> DECISION[Decision receipt]
-    DECISION --> LEDGER[(Append-only receipt ledger)]
-    OBSERVE --> LEDGER
-    LEDGER --> ANALYZE[Audit, replay, policy simulation]
-    ANALYZE --> LAB[Decision Lab]
-    LAB --> POLICY[Reviewed policy recommendation]
-  end
-
-  TASKS[Tasks: Exa, fixtures, production samples] --> EVAL[Evals: deterministic, human, Braintrust]
-  EVAL -->|score and evaluator version| OBSERVE
-  LEDGER -->|privacy-safe spans| OTEL[OpenTelemetry and trace backends]
-  POLICY -. human-approved export .-> GW
+  APP[Agents, applications, and gateway execution] --> PROVIDERS[OpenAI, Anthropic, Google, xAI, Bedrock, Fireworks]
+  APP --> ROUTERS[OpenRouter and LiteLLM]
+  APP --> CONTROL[Portkey and Vercel AI Gateway]
+  APP --> EDGE[Cloudflare AI Gateway]
+  ROUTERS -->|route import| ALLOW[Strict metadata allowlist]
+  CONTROL -->|ar ingest| ALLOW
+  EDGE -->|ar ingest| ALLOW
+  BRAIN[Braintrust scores] -->|numeric allowlist| OBSERVE
+  ALLOW --> DECISION[Decision receipt]
+  ALLOW --> OBSERVE[Measured observation]
+  DECISION --> LEDGER[(Append-only ledger)]
+  OBSERVE --> LEDGER
+  LEDGER --> ANALYZE[Audit, replay, simulation]
+  ANALYZE --> LAB[Decision Lab]
+  LEDGER -->|privacy-safe spans| OTEL[OpenTelemetry]
+  LAB --> POLICY[Reviewed policy proposal]
+  POLICY -. planned human-approved path .-> EXPORT[Gateway policy export adapters]
 ```
 
 The rendered and editable versions live in `diagrams/agentroute-integration-plane.*`.
@@ -62,7 +58,13 @@ explain exactly what evidence is missing and which analysis is disabled.
 
 ## Trust boundaries
 
-- The live OpenRouter adapter copies an allowlist of routing evidence only.
+- Every router and gateway adapter copies an allowlist of routing evidence
+  only. Portkey, Vercel AI Gateway, and Cloudflare AI Gateway can be ingested
+  from saved JSON without configuring an account in AgentRoute.
+- Gateway logs are split into an immutable decision and an optional measured
+  observation. Stable IDs make replayed imports idempotent.
+- Braintrust score import retains evaluator identity and 0..1 numeric scores,
+  but drops inputs, outputs, reasoning, and arbitrary metadata.
 - Prompts, response text, credentials, headers, endpoints, and unknown extension
   objects are not included in the Decision Lab model.
 - The generated Decision Lab is a standalone local HTML file with no remote
@@ -81,4 +83,4 @@ turning AgentRoute into a gateway:
 2. **Evaluator plugins** — deterministic, human, and model-judge adapters behind
    one versioned result contract.
 3. **Policy registry** — reviewed, versioned recommendations with export adapters
-   for OpenRouter, LiteLLM, Portkey, or application-native routers.
+   for OpenRouter, LiteLLM, Portkey, Vercel AI Gateway, or application-native routers.

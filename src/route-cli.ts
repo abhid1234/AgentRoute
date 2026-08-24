@@ -3,10 +3,19 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { formatConnectorCatalog, isConnectorCapability, isConnectorRole, isConnectorStatus, listConnectors } from "./connectors.js";
 import type { ConnectorFilters } from "./connectors.js";
-import { evaluationToObservation } from "./evaluation.js";
+import { evaluationToObservation, fromBraintrustEvaluation } from "./evaluation.js";
 import { writeDecisionLab } from "./decision-lab.js";
 import { captureOpenRouter } from "./openrouter-capture.js";
-import { fromLiteLLMRoute, fromOpenRouterRoute } from "./route-adapters.js";
+import {
+  fromCloudflareAiGatewayRoute,
+  fromLiteLLMRoute,
+  fromOpenRouterRoute,
+  fromPortkeyRoute,
+  fromVercelAiGatewayRoute,
+  importCloudflareAiGatewayRoute,
+  importPortkeyRoute,
+  importVercelAiGatewayRoute,
+} from "./route-adapters.js";
 import { auditRouteRecords } from "./route-audit.js";
 import { formatRouteReport } from "./route-report.js";
 import { routeToOtel } from "./route-to-otel.js";
@@ -61,6 +70,8 @@ const HELP = `AgentRoute — auditable model-routing receipts
   ot route record <decision.json> [-o receipt.route.json | --ledger routes.route.jsonl] [--force]
   ot route observe <routes.route.jsonl> --route-id ID --status STATUS [--latency-ms N] [--cost-usd N] [--quality N]
   ar evaluate <evaluation.json> --ledger routes.route.jsonl
+  ar evaluate braintrust <event.json> --ledger routes.route.jsonl [--route-id ID]
+  ar ingest <portkey|vercel-ai-gateway|cloudflare-ai-gateway> <event.json> --ledger routes.route.jsonl [--portkey-cost-unit usd|cents]
   ot route validate <receipt.route.json|routes.route.jsonl>
   ot route explain <receipt.route.json|routes.route.jsonl> [--route-id ID]
   ot route replay <routes.route.jsonl> [-o report.json]
@@ -68,10 +79,10 @@ const HELP = `AgentRoute — auditable model-routing receipts
   ar report <routes.route.jsonl> [--route-id ID] [-o report.txt]
   ar audit <routes.route.jsonl> [-o audit.json]
   ar lab <routes.route.jsonl> -o decision-lab.html
-  ar connectors [--json] [--status available|planned] [--role ROLE] [--capability CAPABILITY]
+  ar connectors [--json] [--status available|partial|planned] [--role ROLE] [--capability CAPABILITY]
   ar task-pack exa <seeds.json> [-o task-pack.json]
   ot route to-otel <receipt.route.json|routes.route.jsonl> [--route-id ID] [-o traces.json]
-  ot route import <openrouter|litellm> <event.json> [-o receipt.route.json] [--complete-candidates]
+  ot route import <openrouter|litellm|portkey|vercel-ai-gateway|cloudflare-ai-gateway> <event.json> [-o receipt.route.json] [--complete-candidates]
 
 STATUS: success | failure | partial | cancelled | unknown`;
 
@@ -147,14 +158,45 @@ export async function runRouteCli(args: string[]): Promise<void> {
   }
 
   if (command === "evaluate") {
-    const input = rest[0];
+    const source = rest[0] === "braintrust" ? "braintrust" : undefined;
+    const input = source ? rest[1] : rest[0];
     const ledger = option(rest, "--ledger");
     if (!input || !ledger) throw new Error("usage: ar evaluate <evaluation.json> --ledger routes.route.jsonl");
-    const draft = JSON.parse(readFileSync(input, "utf8")) as EvaluationDraft;
+    const event = JSON.parse(readFileSync(input, "utf8")) as unknown;
+    const draft = source === "braintrust" ? fromBraintrustEvaluation(event, {
+      ...(option(rest, "--route-id") ? { routeId: option(rest, "--route-id") } : {}),
+      ...(option(rest, "--evaluator-id") ? { evaluatorId: option(rest, "--evaluator-id") } : {}),
+      ...(option(rest, "--evaluator-version") ? { evaluatorVersion: option(rest, "--evaluator-version") } : {}),
+      ...(numeric(rest, "--pass-threshold") !== undefined ? { passThreshold: numeric(rest, "--pass-threshold") } : {}),
+    }) : event as EvaluationDraft;
     const state = foldRouteRecords(loadRouteRecords(ledger)).get(draft.route_id);
     if (!state) throw new Error(`route_id not found: ${draft.route_id}`);
     const observation = evaluationToObservation(draft, state.latest_observation?.outcome);
     console.error(`${appendRouteRecord(ledger, observation)} ${observation.observation_id} -> ${ledger}`);
+    return;
+  }
+
+  if (command === "ingest") {
+    const [source, input] = rest;
+    const ledger = option(rest, "--ledger");
+    if (!source || !input || !ledger || !["portkey", "vercel-ai-gateway", "cloudflare-ai-gateway"].includes(source)) {
+      throw new Error("usage: ar ingest <portkey|vercel-ai-gateway|cloudflare-ai-gateway> <event.json> --ledger routes.route.jsonl");
+    }
+    const event = JSON.parse(readFileSync(input, "utf8"));
+    const portkeyCostUnit = option(rest, "--portkey-cost-unit");
+    if (portkeyCostUnit && !["usd", "cents"].includes(portkeyCostUnit)) throw new Error("--portkey-cost-unit must be usd or cents");
+    const options = {
+      ...(option(rest, "--route-id") ? { routeId: option(rest, "--route-id") } : {}),
+      ...(option(rest, "--task-type") ? { taskType: option(rest, "--task-type") } : {}),
+      ...(option(rest, "--reason") ? { reason: option(rest, "--reason") } : {}),
+      completeCandidateSet: rest.includes("--complete-candidates"),
+      ...(portkeyCostUnit ? { portkeyCostUnit: portkeyCostUnit as "usd" | "cents" } : {}),
+    };
+    const imported = source === "portkey" ? importPortkeyRoute(event, options)
+      : source === "vercel-ai-gateway" ? importVercelAiGatewayRoute(event, options)
+        : importCloudflareAiGatewayRoute(event, options);
+    console.error(`${appendRouteRecord(ledger, imported.decision)} ${imported.decision.route_id} -> ${ledger}`);
+    if (imported.observation) console.error(`${appendRouteRecord(ledger, imported.observation)} ${imported.observation.observation_id} -> ${ledger}`);
     return;
   }
 
@@ -222,7 +264,7 @@ export async function runRouteCli(args: string[]): Promise<void> {
     const capability = option(rest, "--capability");
     const filters: ConnectorFilters = {};
     if (status) {
-      if (!isConnectorStatus(status)) throw new Error("--status must be available or planned");
+      if (!isConnectorStatus(status)) throw new Error("--status must be available, partial, or planned");
       filters.status = status;
     }
     if (role) {
@@ -263,8 +305,9 @@ export async function runRouteCli(args: string[]): Promise<void> {
 
   if (command === "import") {
     const [source, input] = rest;
-    if (!source || !input || !["openrouter", "litellm"].includes(source)) {
-      throw new Error("usage: ot route import <openrouter|litellm> <event.json> [-o receipt.route.json]");
+    const sources = ["openrouter", "litellm", "portkey", "vercel-ai-gateway", "cloudflare-ai-gateway"];
+    if (!source || !input || !sources.includes(source)) {
+      throw new Error("usage: ot route import <openrouter|litellm|portkey|vercel-ai-gateway|cloudflare-ai-gateway> <event.json> [-o receipt.route.json]");
     }
     const event = JSON.parse(readFileSync(input, "utf8"));
     const options = {
@@ -273,7 +316,11 @@ export async function runRouteCli(args: string[]): Promise<void> {
       ...(option(rest, "--reason") ? { reason: option(rest, "--reason") } : {}),
       completeCandidateSet: rest.includes("--complete-candidates"),
     };
-    const decision = source === "openrouter" ? fromOpenRouterRoute(event, options) : fromLiteLLMRoute(event, options);
+    const decision = source === "openrouter" ? fromOpenRouterRoute(event, options)
+      : source === "litellm" ? fromLiteLLMRoute(event, options)
+        : source === "portkey" ? fromPortkeyRoute(event, options)
+          : source === "vercel-ai-gateway" ? fromVercelAiGatewayRoute(event, options)
+            : fromCloudflareAiGatewayRoute(event, options);
     const output = option(rest, "-o", "--out");
     if (output) console.error(`${writeRouteDecision(output, decision, rest.includes("--force"))} ${decision.route_id} -> ${output}`);
     else emit(decision);

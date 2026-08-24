@@ -21,24 +21,52 @@ node dist/cli.js report examples/can-auto-routing-prove-it.route.jsonl
 node dist/cli.js audit examples/can-auto-routing-prove-it.route.jsonl
 node dist/cli.js lab examples/can-auto-routing-prove-it.route.jsonl -o local/decision-lab.html
 node dist/cli.js connectors
-node dist/cli.js connectors --status planned --json
+node dist/cli.js connectors --status partial --json
+node dist/cli.js route import vercel-ai-gateway saved-vercel-event.json
+node dist/cli.js ingest cloudflare-ai-gateway saved-cloudflare-log.json --ledger local/routes.route.jsonl
+node dist/cli.js evaluate braintrust saved-braintrust-score.json --ledger local/routes.route.jsonl
+```
+
+Try the complete offline vendor path with the bundled fixtures:
+
+```bash
+node dist/cli.js ingest cloudflare-ai-gateway examples/imports/cloudflare-ai-gateway-log.json \
+  --route-id route_demo_gateway --ledger local/vendor-demo.route.jsonl
+node dist/cli.js evaluate braintrust examples/imports/braintrust-score.json \
+  --ledger local/vendor-demo.route.jsonl
+node dist/cli.js report local/vendor-demo.route.jsonl
 ```
 
 The `ar` package binary accepts both `ar ...` and the historical `ar route ...` form.
+
+Applications can also import the typed library surface after `npm run build`:
+
+```ts
+import { importCloudflareAiGatewayRoute, replayRoutes } from "agentroute";
+
+const { decision, observation } = importCloudflareAiGatewayRoute(savedLog);
+const report = replayRoutes(observation ? [decision, observation] : [decision]);
+```
 
 ## Included implementation
 
 - Draft 2020-12 receipt schema for immutable decisions and later observations.
 - Append-only JSONL ledger with idempotent retries and sequence validation.
 - Human-readable explanation, deterministic replay analytics, and policy simulation.
-- Metadata-only OpenRouter and LiteLLM imports with conservative evidence fidelity.
+- Metadata-only OpenRouter, LiteLLM, Portkey, Vercel AI Gateway, and Cloudflare
+  AI Gateway imports with conservative evidence fidelity.
+- Offline gateway ingestion that splits allowlisted routing facts from measured
+  status, latency, cost, token, retry, and cache observations.
+- Braintrust numeric-score import that never retains experiment inputs, outputs,
+  evaluator reasoning, or arbitrary metadata.
 - Live, non-streaming OpenRouter capture with stable router metadata and an allowlisted receipt boundary.
 - Exa-backed fresh task packs plus a deterministic evaluator contract.
 - Screenshot-ready receipt detail and routing reports that separate predicted from measured values.
 - Audit-readiness grading that reports whether receipts can support a defensible comparison.
 - A standalone, interactive Decision Lab with receipt search, candidate evidence, router traces, gaps, and a predicted policy sandbox.
 - Privacy-safe OTLP/JSON export for routing decision spans.
-- A typed connector map that separates tested integrations from planned gateway, evaluator, and policy-export work.
+- A typed connector map with capability-level readiness, so working decision
+  imports are not confused with still-planned policy exports.
 - Examples, adversarial behavioral tests, and a conformance corpus.
 
 The format and UX constraints are documented in [`docs/agentroute-spec.md`](docs/agentroute-spec.md). The handoff records the stable surfaces and verification boundary.
