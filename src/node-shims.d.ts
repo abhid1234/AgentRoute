@@ -3,12 +3,35 @@
 // on an airlocked machine. Covers only the surface we touch.
 
 declare module "node:fs" {
+  interface FSWatcher { close(): void; }
   export function readFileSync(path: string, encoding: "utf8"): string;
   export function writeFileSync(path: string, data: string): void;
   export function appendFileSync(path: string, data: string): void;
   export function existsSync(path: string): boolean;
   export function renameSync(oldPath: string, newPath: string): void;
   export function unlinkSync(path: string): void;
+  export function watch(path: string, listener: () => void): FSWatcher;
+}
+
+declare module "node:http" {
+  interface IncomingMessage {
+    url?: string;
+    on(event: "close", cb: () => void): void;
+  }
+  interface ServerResponse {
+    statusCode: number;
+    setHeader(name: string, value: string): void;
+    write(value: string): void;
+    end(value?: string): void;
+  }
+  interface AddressInfo { port: number; }
+  interface Server {
+    once(event: "error", cb: (error: Error) => void): void;
+    listen(port: number, host: string, cb: () => void): void;
+    address(): AddressInfo | string | null;
+    close(cb: (error?: Error) => void): void;
+  }
+  export function createServer(handler: (request: IncomingMessage, response: ServerResponse) => void): Server;
 }
 
 declare module "node:crypto" {
@@ -42,6 +65,7 @@ declare const process: {
   stdin: NodeJS.ReadStream;
   stdout: { write(s: string): void };
   env: Record<string, string | undefined>;
+  on(event: "SIGINT" | "SIGTERM", cb: () => void): void;
   exit(code?: number): never;
 };
 
