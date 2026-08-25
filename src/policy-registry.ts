@@ -22,6 +22,21 @@ export interface AgentRoutePolicy extends RouteSimulationPolicy {
 export interface PolicyRegistry {
   registry_version: "0.1";
   policies: AgentRoutePolicy[];
+  events?: PolicyRegistryEvent[];
+}
+
+export interface PolicyRegistryEvent {
+  event_version: "0.1";
+  event_id: string;
+  policy_id: string;
+  policy_version: string;
+  from_status?: PolicyStatus;
+  to_status: PolicyStatus;
+  actor: string;
+  reason: string;
+  occurred_at: string;
+  human_attested?: true;
+  policy_fingerprint: string;
 }
 
 export interface PolicyDiff {
@@ -86,6 +101,23 @@ export function validatePolicyRegistry(value: unknown): PolicyRegistry {
     const key = `${policy.id}@${policy.version}`;
     if (identities.has(key)) throw new Error(`duplicate registry policy: ${key}`);
     identities.add(key);
+  }
+  if (value.events !== undefined) {
+    if (!Array.isArray(value.events)) throw new Error("registry events must be an array");
+    const eventIds = new Set<string>();
+    const known = new Set(policies.map((policy) => `${policy.id}@${policy.version}`));
+    for (const raw of value.events) {
+      if (!object(raw) || raw.event_version !== "0.1") throw new Error("registry event_version must equal 0.1");
+      if (typeof raw.event_id !== "string" || !raw.event_id || eventIds.has(raw.event_id)) throw new Error(`registry event_id must be unique: ${String(raw.event_id || "<empty>")}`);
+      eventIds.add(raw.event_id);
+      if (typeof raw.policy_id !== "string" || typeof raw.policy_version !== "string" || !known.has(`${raw.policy_id}@${raw.policy_version}`)) throw new Error("registry event references an unknown policy");
+      if (raw.from_status !== undefined && !["draft", "reviewed", "approved", "deprecated"].includes(String(raw.from_status))) throw new Error("registry event from_status is invalid");
+      if (!["draft", "reviewed", "approved", "deprecated"].includes(String(raw.to_status))) throw new Error("registry event to_status is invalid");
+      if (typeof raw.actor !== "string" || !raw.actor.trim() || typeof raw.reason !== "string" || !raw.reason.trim()) throw new Error("registry event requires actor and reason");
+      if (typeof raw.occurred_at !== "string" || Number.isNaN(Date.parse(raw.occurred_at))) throw new Error("registry event occurred_at must be RFC3339");
+      if (typeof raw.policy_fingerprint !== "string" || !/^sha256:[0-9a-f]{64}$/.test(raw.policy_fingerprint)) throw new Error("registry event policy_fingerprint is invalid");
+      if (raw.human_attested !== undefined && raw.human_attested !== true) throw new Error("registry event human_attested may only be true");
+    }
   }
   return value as unknown as PolicyRegistry;
 }
