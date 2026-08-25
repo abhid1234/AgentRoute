@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
+import { createPrivateKey, createPublicKey, sign as cryptoSign, verify as cryptoVerify } from "node:crypto";
 import { auditRouteRecords } from "./route-audit.js";
 import { canonicalJson, sha256 } from "./canonical.js";
 import { renderDecisionLab } from "./decision-lab.js";
@@ -24,6 +25,20 @@ export interface EvidenceCapsule {
     replay: ReturnType<typeof replayRoutes>;
     audit: ReturnType<typeof auditRouteRecords>;
   };
+  signature?: CapsuleSignature;
+}
+
+export interface CapsuleSignature {
+  signature_version: "0.1";
+  algorithm: "ed25519";
+  public_key_pem: string;
+  public_key_fingerprint: string;
+  signature_base64: string;
+}
+
+export interface CapsuleVerificationOptions {
+  require_signature?: boolean;
+  public_key_pem?: string;
 }
 
 export interface CapsuleVerification {
@@ -32,6 +47,11 @@ export interface CapsuleVerification {
   record_count: number;
   policy_count: number;
   root_sha256?: string;
+  signature_present: boolean;
+  signature_valid?: boolean;
+  signature_trusted?: boolean;
+  public_key_fingerprint?: string;
+  warnings: string[];
 }
 
 function sanitizeDecision(decision: RouteDecision): RouteDecision {
@@ -129,10 +149,34 @@ export function createEvidenceCapsule(records: RouteRecord[], policyValues: unkn
   };
 }
 
-export function verifyEvidenceCapsule(value: unknown): CapsuleVerification {
+function normalizedPublicKey(value: string | ReturnType<typeof createPrivateKey>): string {
+  return createPublicKey(value).export({ type: "spki", format: "pem" });
+}
+
+function signingMessage(capsule: Pick<EvidenceCapsule, "capsule_version" | "manifest">): Uint8Array {
+  return Buffer.from(`AgentRoute capsule ${capsule.capsule_version}\n${capsule.manifest.root_sha256}`, "utf8");
+}
+
+export function signEvidenceCapsule(capsule: EvidenceCapsule, privateKeyPem: string): EvidenceCapsule {
+  const verification = verifyEvidenceCapsule(capsule);
+  if (!verification.valid) throw new Error(`cannot sign invalid AgentRoute capsule:\n  - ${verification.errors.join("\n  - ")}`);
+  const privateKey = createPrivateKey(privateKeyPem);
+  const publicKeyPem = normalizedPublicKey(privateKey);
+  const signature: CapsuleSignature = {
+    signature_version: "0.1",
+    algorithm: "ed25519",
+    public_key_pem: publicKeyPem,
+    public_key_fingerprint: sha256(publicKeyPem),
+    signature_base64: cryptoSign(null, signingMessage(capsule), privateKey).toString("base64"),
+  };
+  return { ...capsule, signature };
+}
+
+export function verifyEvidenceCapsule(value: unknown, options: CapsuleVerificationOptions = {}): CapsuleVerification {
   const errors: string[] = [];
+  const warnings: string[] = [];
   const capsule = value as Partial<EvidenceCapsule>;
-  if (!value || typeof value !== "object" || Array.isArray(value)) return { valid: false, errors: ["capsule must be an object"], record_count: 0, policy_count: 0 };
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { valid: false, errors: ["capsule must be an object"], record_count: 0, policy_count: 0, signature_present: false, warnings };
   if (capsule.capsule_version !== "0.1") errors.push("capsule_version must equal 0.1");
   if (!capsule.created_at || Number.isNaN(Date.parse(capsule.created_at))) errors.push("created_at must be an RFC3339 timestamp");
   if (!capsule.manifest || capsule.manifest.format !== "agentroute-evidence-capsule") errors.push("manifest format is invalid");
@@ -157,7 +201,46 @@ export function verifyEvidenceCapsule(value: unknown): CapsuleVerification {
       }
     }
   }
-  return { valid: errors.length === 0, errors, record_count: records.length, policy_count: policies.length, ...(capsule.manifest?.root_sha256 ? { root_sha256: capsule.manifest.root_sha256 } : {}) };
+  let signatureValid: boolean | undefined;
+  let signatureTrusted: boolean | undefined;
+  let fingerprint: string | undefined;
+  if (!capsule.signature) {
+    if (options.require_signature || options.public_key_pem) errors.push("capsule signature is required");
+  } else {
+    const signature = capsule.signature as CapsuleSignature;
+    if (signature.signature_version !== "0.1" || signature.algorithm !== "ed25519") errors.push("capsule signature contract is invalid");
+    if (typeof signature.public_key_pem !== "string" || !signature.public_key_pem) errors.push("capsule signature public key is missing");
+    if (typeof signature.public_key_fingerprint !== "string" || !/^sha256:[0-9a-f]{64}$/.test(signature.public_key_fingerprint)) errors.push("capsule signature public key fingerprint is invalid");
+    if (typeof signature.signature_base64 !== "string" || !/^[A-Za-z0-9+/]{86}==$/.test(signature.signature_base64)) errors.push("capsule Ed25519 signature encoding is invalid");
+    if (!errors.some((error) => error.startsWith("capsule signature")) && capsule.manifest && capsule.capsule_version) {
+      try {
+        const embeddedPublicKey = normalizedPublicKey(signature.public_key_pem);
+        fingerprint = sha256(embeddedPublicKey);
+        if (fingerprint !== signature.public_key_fingerprint) errors.push("capsule public key fingerprint mismatch");
+        const trustedPublicKey = options.public_key_pem ? normalizedPublicKey(options.public_key_pem) : undefined;
+        if (trustedPublicKey && sha256(trustedPublicKey) !== fingerprint) errors.push("capsule signer does not match trusted public key");
+        const verificationKey = trustedPublicKey || embeddedPublicKey;
+        signatureValid = cryptoVerify(null, signingMessage(capsule as EvidenceCapsule), createPublicKey(verificationKey), Buffer.from(signature.signature_base64, "base64"));
+        if (!signatureValid) errors.push("capsule Ed25519 signature verification failed");
+        signatureTrusted = Boolean(trustedPublicKey && signatureValid);
+        if (!trustedPublicKey && signatureValid) warnings.push("signature is valid but signer identity is untrusted; provide a trusted public key");
+      } catch (error) {
+        errors.push(`capsule signature verification error: ${(error as Error).message}`);
+      }
+    }
+  }
+  return {
+    valid: errors.length === 0,
+    errors,
+    record_count: records.length,
+    policy_count: policies.length,
+    ...(capsule.manifest?.root_sha256 ? { root_sha256: capsule.manifest.root_sha256 } : {}),
+    signature_present: Boolean(capsule.signature),
+    ...(signatureValid !== undefined ? { signature_valid: signatureValid } : {}),
+    ...(signatureTrusted !== undefined ? { signature_trusted: signatureTrusted } : {}),
+    ...(fingerprint ? { public_key_fingerprint: fingerprint } : {}),
+    warnings,
+  };
 }
 
 export function writeEvidenceCapsule(path: string, capsule: EvidenceCapsule): void {

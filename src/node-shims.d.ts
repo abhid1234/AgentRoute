@@ -41,6 +41,16 @@ declare module "node:crypto" {
   }
   export function createHash(algorithm: "sha256"): Hash;
   export function randomUUID(): string;
+  interface KeyObject {
+    export(options: { type: "spki"; format: "pem" }): string;
+  }
+  interface CryptoBuffer {
+    toString(encoding: "base64"): string;
+  }
+  export function createPrivateKey(key: string): KeyObject;
+  export function createPublicKey(key: string | KeyObject): KeyObject;
+  export function sign(algorithm: null, data: Uint8Array, key: KeyObject): CryptoBuffer;
+  export function verify(algorithm: null, data: Uint8Array, key: KeyObject, signature: Uint8Array): boolean;
 }
 
 declare module "node:path" {
@@ -77,6 +87,10 @@ declare const console: {
 interface ImportMeta {
   url: string;
 }
+
+declare const Buffer: {
+  from(value: string, encoding?: "utf8" | "base64"): Uint8Array;
+};
 
 // Minimal fetch surface (Node 18+ global) used by the judge.
 interface _OTResponse {
