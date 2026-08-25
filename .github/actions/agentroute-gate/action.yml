@@ -1,0 +1,21 @@
+name: AgentRoute routing quality gate
+description: Compare current routing evidence with a checked-in baseline.
+inputs:
+  current:
+    description: Current AgentRoute JSONL ledger
+    required: true
+  baseline:
+    description: Baseline AgentRoute JSONL ledger
+    required: true
+  config:
+    description: AgentRoute quality-gate JSON config
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: npm ci --ignore-scripts
+    - shell: bash
+      run: npm run build
+    - shell: bash
+      run: node dist/cli.js gate "${{ inputs.current }}" --baseline "${{ inputs.baseline }}" --config "${{ inputs.config }}" --format github

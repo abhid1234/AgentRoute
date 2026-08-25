@@ -1,11 +1,19 @@
 // `ot route` command family. Parsing stays intentionally small and dependency
 // free so receipts work in the same airlocked environments as OpenTrajectory.
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { createEvidenceCapsule, loadEvidenceCapsule, renderCapsuleLab, verifyEvidenceCapsule, writeEvidenceCapsule } from "./capsule.js";
 import { formatConnectorCatalog, isConnectorCapability, isConnectorRole, isConnectorStatus, listConnectors } from "./connectors.js";
 import type { ConnectorFilters } from "./connectors.js";
 import { evaluationToObservation, fromBraintrustEvaluation } from "./evaluation.js";
 import { writeDecisionLab } from "./decision-lab.js";
 import { captureOpenRouter } from "./openrouter-capture.js";
+import { startObservatory } from "./observatory.js";
+import { compilePolicy, diffPolicies, validatePolicy } from "./policy-registry.js";
+import type { PolicyTarget } from "./policy-registry.js";
+import { evaluateRouteGate, formatGitHubGate } from "./quality-gate.js";
+import type { RouteGateConfig } from "./quality-gate.js";
+import { fixtureReplayExecutor, runReplayArena } from "./replay-arena.js";
+import type { ReplayArenaTask, ReplayFixture } from "./replay-arena.js";
 import {
   fromCloudflareAiGatewayRoute,
   fromLiteLLMRoute,
@@ -79,6 +87,15 @@ const HELP = `AgentRoute — auditable model-routing receipts
   ar report <routes.route.jsonl> [--route-id ID] [-o report.txt]
   ar audit <routes.route.jsonl> [-o audit.json]
   ar lab <routes.route.jsonl> -o decision-lab.html
+  ar arena <routes.route.jsonl> --tasks tasks.json --fixtures outcomes.json --max-requests N --max-cost-usd N [--ledger replay.route.jsonl] [-o report.json]
+  ar serve <routes.route.jsonl> [--host 127.0.0.1] [--port 4319] [--allow-remote]
+  ar gate <current.route.jsonl> --baseline baseline.route.jsonl --config gate.json [--format json|github]
+  ar policy validate <policy.json>
+  ar policy diff <old-policy.json> <new-policy.json>
+  ar policy compile <policy.json> --target <native|openrouter|litellm|portkey|vercel-ai-gateway> [-o config.json]
+  ar capsule create <routes.route.jsonl> -o evidence.arcap [--policy policy.json]
+  ar capsule verify <evidence.arcap>
+  ar capsule open <evidence.arcap> -o decision-lab.html
   ar connectors [--json] [--status available|partial|planned] [--role ROLE] [--capability CAPABILITY]
   ar task-pack exa <seeds.json> [-o task-pack.json]
   ot route to-otel <receipt.route.json|routes.route.jsonl> [--route-id ID] [-o traces.json]
@@ -256,6 +273,105 @@ export async function runRouteCli(args: string[]): Promise<void> {
     writeDecisionLab(output, loadRouteRecords(input));
     console.error(`wrote AgentRoute Decision Lab -> ${output}`);
     return;
+  }
+
+  if (command === "arena") {
+    const input = rest[0];
+    const tasksPath = option(rest, "--tasks");
+    const fixturesPath = option(rest, "--fixtures");
+    const maxRequests = numeric(rest, "--max-requests");
+    const maxCost = numeric(rest, "--max-cost-usd");
+    if (!input || !tasksPath || !fixturesPath || maxRequests === undefined || maxCost === undefined) throw new Error("usage: ar arena <routes.route.jsonl> --tasks tasks.json --fixtures outcomes.json --max-requests N --max-cost-usd N");
+    const taskValue = JSON.parse(readFileSync(tasksPath, "utf8")) as { tasks?: ReplayArenaTask[] } | ReplayArenaTask[];
+    const fixtureValue = JSON.parse(readFileSync(fixturesPath, "utf8")) as { fixtures?: ReplayFixture[] } | ReplayFixture[];
+    const tasks = Array.isArray(taskValue) ? taskValue : taskValue.tasks;
+    const fixtures = Array.isArray(fixtureValue) ? fixtureValue : fixtureValue.fixtures;
+    if (!tasks || !fixtures) throw new Error("arena task and fixture files must contain arrays or {tasks}/{fixtures}");
+    const report = await runReplayArena(loadRouteRecords(input), { tasks, limits: { max_requests: maxRequests, max_cost_usd: maxCost }, executor: fixtureReplayExecutor(fixtures) });
+    const ledger = option(rest, "--ledger");
+    if (ledger) {
+      if (existsSync(ledger) && !rest.includes("--force")) throw new Error(`${ledger} already exists; pass --force to replace it`);
+      writeFileSync(ledger, report.records.map((record) => JSON.stringify(record)).join("\n") + "\n");
+    }
+    emit(report, option(rest, "-o", "--out"));
+    return;
+  }
+
+  if (command === "serve") {
+    const input = rest[0];
+    if (!input) throw new Error("usage: ar serve <routes.route.jsonl> [--host 127.0.0.1] [--port 4319]");
+    const handle = await startObservatory(input, { host: option(rest, "--host"), port: numeric(rest, "--port"), allow_remote: rest.includes("--allow-remote") });
+    console.error(`AgentRoute Observatory listening at ${handle.address.url}`);
+    await new Promise<void>((resolve) => {
+      const stop = async (): Promise<void> => { await handle.close(); resolve(); };
+      process.on("SIGINT", stop);
+      process.on("SIGTERM", stop);
+    });
+    return;
+  }
+
+  if (command === "gate") {
+    const current = rest[0];
+    const baseline = option(rest, "--baseline");
+    const configPath = option(rest, "--config");
+    if (!current || !baseline || !configPath) throw new Error("usage: ar gate <current.route.jsonl> --baseline baseline.route.jsonl --config gate.json");
+    const format = option(rest, "--format") || "json";
+    if (!["json", "github"].includes(format)) throw new Error("--format must be json or github");
+    const result = evaluateRouteGate(loadRouteRecords(baseline), loadRouteRecords(current), JSON.parse(readFileSync(configPath, "utf8")) as RouteGateConfig);
+    if (format === "github") emitText(formatGitHubGate(result), option(rest, "-o", "--out"));
+    else emit(result, option(rest, "-o", "--out"));
+    if (result.status === "fail") throw new Error("AgentRoute quality gate failed");
+    return;
+  }
+
+  if (command === "policy") {
+    const [action, first, second] = rest;
+    if (action === "validate" && first) {
+      const policy = validatePolicy(JSON.parse(readFileSync(first, "utf8")));
+      emit({ valid: true, policy_id: policy.id, policy_version: policy.version, status: policy.status }, option(rest, "-o", "--out"));
+      return;
+    }
+    if (action === "diff" && first && second) {
+      emit(diffPolicies(JSON.parse(readFileSync(first, "utf8")), JSON.parse(readFileSync(second, "utf8"))), option(rest, "-o", "--out"));
+      return;
+    }
+    if (action === "compile" && first) {
+      const target = option(rest, "--target") as PolicyTarget | undefined;
+      if (!target) throw new Error("policy compile requires --target");
+      emit(compilePolicy(JSON.parse(readFileSync(first, "utf8")), target), option(rest, "-o", "--out"));
+      return;
+    }
+    throw new Error("usage: ar policy <validate|diff|compile> ...");
+  }
+
+  if (command === "capsule") {
+    const [action, input] = rest;
+    if (action === "create" && input) {
+      const output = option(rest, "-o", "--out");
+      if (!output) throw new Error("capsule create requires -o <evidence.arcap>");
+      if (existsSync(output) && !rest.includes("--force")) throw new Error(`${output} already exists; pass --force to replace it`);
+      const policyPath = option(rest, "--policy");
+      const capsule = createEvidenceCapsule(loadRouteRecords(input), policyPath ? [JSON.parse(readFileSync(policyPath, "utf8"))] : []);
+      writeEvidenceCapsule(output, capsule);
+      console.error(`wrote AgentRoute evidence capsule -> ${output}`);
+      return;
+    }
+    if (action === "verify" && input) {
+      const value = JSON.parse(readFileSync(input, "utf8"));
+      const result = verifyEvidenceCapsule(value);
+      emit(result, option(rest, "-o", "--out"));
+      if (!result.valid) throw new Error("AgentRoute evidence capsule verification failed");
+      return;
+    }
+    if (action === "open" && input) {
+      const output = option(rest, "-o", "--out");
+      if (!output) throw new Error("capsule open requires -o <decision-lab.html>");
+      if (existsSync(output) && !rest.includes("--force")) throw new Error(`${output} already exists; pass --force to replace it`);
+      writeFileSync(output, renderCapsuleLab(loadEvidenceCapsule(input)));
+      console.error(`wrote verified capsule Decision Lab -> ${output}`);
+      return;
+    }
+    throw new Error("usage: ar capsule <create|verify|open> ...");
   }
 
   if (command === "connectors") {

@@ -32,6 +32,11 @@ import { captureOpenRouter } from "../src/openrouter-capture.js";
 import { evaluationToObservation, evaluateChecklist, fromBraintrustEvaluation } from "../src/evaluation.js";
 import { buildDecisionLabModel, renderDecisionLab } from "../src/decision-lab.js";
 import { auditRouteRecords } from "../src/route-audit.js";
+import { createEvidenceCapsule, renderCapsuleLab, verifyEvidenceCapsule } from "../src/capsule.js";
+import { startObservatory } from "../src/observatory.js";
+import { compilePolicy, diffPolicies, validatePolicyRegistry } from "../src/policy-registry.js";
+import { evaluateRouteGate, formatGitHubGate } from "../src/quality-gate.js";
+import { fixtureReplayExecutor, runReplayArena } from "../src/replay-arena.js";
 import { formatReceiptDetail, formatRouteReport } from "../src/route-report.js";
 import { createExaTaskPack } from "../src/task-pack.js";
 import { routeToOtel } from "../src/route-to-otel.js";
@@ -144,8 +149,8 @@ try {
   execFileSync(process.execPath, ["--import", "tsx", cli, "lab", ledger, "-o", labOutput], { encoding: "utf8" });
   const labText = readFileSync(labOutput, "utf8");
   ok("CLI writes a standalone Decision Lab", labText.includes("AgentRoute Decision Lab") && labText.includes("route_test"));
-  const connectorText = execFileSync(process.execPath, ["--import", "tsx", cli, "connectors", "--status", "partial"], { encoding: "utf8" });
-  ok("CLI filters the connector catalog", connectorText.includes("Portkey AI Gateway") && !connectorText.includes("OpenRouter"));
+  const connectorText = execFileSync(process.execPath, ["--import", "tsx", cli, "connectors", "--role", "policy-target"], { encoding: "utf8" });
+  ok("CLI filters the connector catalog", connectorText.includes("Portkey AI Gateway") && connectorText.includes("OpenRouter") && !connectorText.includes("Cloudflare"));
   const cloudflareEvent = join(scratch, "cloudflare.json");
   const gatewayLedger = join(scratch, "gateway.route.jsonl");
   writeFileSync(cloudflareEvent, JSON.stringify({ id: "cf_cli", created_at: "2026-08-23T12:00:00.000Z", model: "workers-ai/model", provider: "workers-ai", success: true, status_code: 200, duration: 41, cost: 0.004, tokens_in: 12, tokens_out: 8, metadata: "private prompt", request: { body: "secret" } }));
@@ -161,9 +166,115 @@ try {
   ok("CLI Braintrust import excludes inputs and outputs", !evaluatedGatewayText.includes("private input") && !evaluatedGatewayText.includes("private output"));
   execFileSync(process.execPath, ["--import", "tsx", cli, "evaluate", "braintrust", braintrustEvent, "--ledger", gatewayLedger], { encoding: "utf8" });
   ok("CLI Braintrust retries are idempotent", parseRouteRecords(readFileSync(gatewayLedger, "utf8")).length === 3);
+
+  const cliPolicy = join(scratch, "policy.json");
+  writeFileSync(cliPolicy, JSON.stringify({ policy_version: "0.1", id: "cli-policy", version: "1.0.0", status: "reviewed", weights: { quality: 0.6, latency: 0.2, cost: 0.2 }, models: [{ model: "model-a", provider: "provider-a" }, { model: "model-b", provider: "provider-b" }] }));
+  const compiledPolicy = execFileSync(process.execPath, ["--import", "tsx", cli, "policy", "compile", cliPolicy, "--target", "openrouter"], { encoding: "utf8" });
+  ok("CLI compiles review-only vendor policy artifacts", JSON.parse(compiledPolicy).dry_run === true && JSON.parse(compiledPolicy).config.models.length === 2);
+  const arenaTasks = join(scratch, "arena-tasks.json");
+  const arenaFixtures = join(scratch, "arena-fixtures.json");
+  const arenaLedger = join(scratch, "arena.route.jsonl");
+  writeFileSync(arenaTasks, JSON.stringify({ tasks: [{ route_id: valid.route_id, task_ref: "task-pack://cli/1" }] }));
+  writeFileSync(arenaFixtures, JSON.stringify({ fixtures: [
+    { route_id: valid.route_id, candidate_id: "winner", estimated_cost_usd: 0.02, outcome: { status: "success", quality: 0.9, cost_usd: 0.02 } },
+    { route_id: valid.route_id, candidate_id: "runner-up", estimated_cost_usd: 0.01, outcome: { status: "success", quality: 0.8, cost_usd: 0.01 } },
+  ] }));
+  const arenaCliReport = execFileSync(process.execPath, ["--import", "tsx", cli, "arena", ledger, "--tasks", arenaTasks, "--fixtures", arenaFixtures, "--max-requests", "2", "--max-cost-usd", "0.05", "--ledger", arenaLedger], { encoding: "utf8" });
+  ok("CLI runs a budgeted offline replay and writes conformant receipts", JSON.parse(arenaCliReport).requests_executed === 2 && validateRouteLedger(parseRouteRecords(readFileSync(arenaLedger, "utf8"))).valid);
+  const gateConfig = join(scratch, "gate.json");
+  writeFileSync(gateConfig, JSON.stringify({ minimum_samples: 1, minimum_observation_coverage: 1, maximum_cost_increase_percent: 0 }));
+  const gateOutput = execFileSync(process.execPath, ["--import", "tsx", cli, "gate", ledger, "--baseline", ledger, "--config", gateConfig], { encoding: "utf8" });
+  ok("CLI quality gate passes identical measured evidence", JSON.parse(gateOutput).status === "pass");
+  const capsulePath = join(scratch, "evidence.arcap");
+  const capsuleLab = join(scratch, "capsule-lab.html");
+  execFileSync(process.execPath, ["--import", "tsx", cli, "capsule", "create", ledger, "--policy", cliPolicy, "-o", capsulePath], { encoding: "utf8" });
+  const capsuleVerification = execFileSync(process.execPath, ["--import", "tsx", cli, "capsule", "verify", capsulePath], { encoding: "utf8" });
+  execFileSync(process.execPath, ["--import", "tsx", cli, "capsule", "open", capsulePath, "-o", capsuleLab], { encoding: "utf8" });
+  ok("CLI creates, verifies, and reopens portable evidence capsules", JSON.parse(capsuleVerification).valid && readFileSync(capsuleLab, "utf8").includes("Decision Lab"));
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }
+
+console.log("evidence suite");
+const arena = await runReplayArena([valid], {
+  run_id: "arena_test",
+  generated_at: "2026-08-24T12:00:00.000Z",
+  tasks: [{ route_id: valid.route_id, task_ref: "task-pack://code-review/1" }],
+  limits: { max_requests: 2, max_cost_usd: 0.05 },
+  executor: fixtureReplayExecutor([
+    { route_id: valid.route_id, candidate_id: "winner", estimated_cost_usd: 0.02, outcome: { status: "success", quality: 0.7, latency_ms: 100, cost_usd: 0.02, error: "private executor detail", metadata: { response: "private model output" } } },
+    { route_id: valid.route_id, candidate_id: "runner-up", estimated_cost_usd: 0.01, outcome: { status: "success", quality: 0.9, latency_ms: 60, cost_usd: 0.01 } },
+  ]),
+});
+ok("Shadow Replay Arena creates conformant candidate receipts", arena.requests_executed === 2 && validateRouteLedger(arena.records).valid);
+ok("Shadow Replay Arena calculates actual quality regret only from measured alternatives", arena.comparisons[0].winner_candidate_id === "runner-up" && arena.comparisons[0].actual_quality_regret === 0.2);
+ok("Shadow Replay Arena strips executor errors, metadata, and model output", !JSON.stringify(arena).includes("private executor") && !JSON.stringify(arena).includes("private model output"));
+const budgetStop = await runReplayArena([valid], {
+  run_id: "arena_budget",
+  generated_at: "2026-08-24T12:00:00.000Z",
+  tasks: [{ route_id: valid.route_id, task_ref: "task-pack://code-review/1", candidate_ids: ["winner"] }],
+  limits: { max_requests: 1, max_cost_usd: 0.01 },
+  executor: fixtureReplayExecutor([{ route_id: valid.route_id, candidate_id: "winner", estimated_cost_usd: 0.02, outcome: { status: "success", cost_usd: 0.02 } }]),
+});
+ok("Shadow Replay Arena stops before exceeding declared cost", budgetStop.requests_executed === 0 && budgetStop.stopped_reason === "cost_limit");
+
+const observedValid = createRouteObservation({ route_id: valid.route_id, observation_id: "obs_gate_base", observed_at: "2026-08-22T10:00:03.000Z", outcome: { status: "success", quality: 0.9, latency_ms: 100, cost_usd: 0.01 } });
+const observedCurrent = createRouteObservation({ route_id: valid.route_id, observation_id: "obs_gate_current", observed_at: "2026-08-22T10:00:03.000Z", outcome: { status: "success", quality: 0.8, latency_ms: 125, cost_usd: 0.012 } });
+const gate = evaluateRouteGate([valid, observedValid], [valid, observedCurrent], { minimum_samples: 1, minimum_observation_coverage: 1, maximum_cost_increase_percent: 10, maximum_latency_increase_percent: 30, minimum_quality_delta: -0.05 });
+ok("quality gate fails measured regressions while retaining passing metrics", gate.status === "fail" && gate.metrics.some((metric) => metric.id === "mean_latency" && metric.status === "pass"));
+ok("quality gate renders GitHub annotations", formatGitHubGate(gate).startsWith("::error title=AgentRoute quality gate::FAIL"));
+const neutralGate = evaluateRouteGate([valid], [valid], { minimum_samples: 1, insufficient_evidence: "neutral" });
+ok("quality gate can mark insufficient evidence neutral", neutralGate.status === "neutral");
+
+const policy = {
+  policy_version: "0.1" as const,
+  id: "balanced-code",
+  version: "1.0.0",
+  status: "reviewed" as const,
+  description: "private policy note",
+  weights: { quality: 0.6, latency: 0.2, cost: 0.2 },
+  criteria: { max_latency_ms: 2000, max_cost_usd: 0.05 },
+  models: [
+    { model: "anthropic/claude-sonnet", provider: "anthropic" },
+    { model: "openai/gpt-5", provider: "openai" },
+  ],
+};
+ok("policy registry validates versioned unique policy identities", validatePolicyRegistry({ registry_version: "0.1", policies: [policy] }).policies.length === 1);
+ok("policy diff flags routing-target changes as breaking", diffPolicies(policy, { ...policy, version: "2.0.0", models: policy.models.slice(0, 1) }).breaking);
+const compiled = (["native", "openrouter", "litellm", "portkey", "vercel-ai-gateway"] as const).map((target) => compilePolicy(policy, target));
+ok("policy compiler emits all five review-only targets with source fingerprints", compiled.every((artifact) => artifact.dry_run && artifact.source.fingerprint.startsWith("sha256:")));
+ok("Vercel compiler maps fallback models and provider ordering", JSON.stringify(compiled[4].config).includes("providerOptions") && JSON.stringify(compiled[4].config).includes("models"));
+
+const capsuleSensitive = createRouteDecision({ ...valid, route_id: "route_capsule", task: { type: "security", description: "private prompt" }, extensions: { unknown_secret: "never-render-this" } });
+const capsule = createEvidenceCapsule([capsuleSensitive, createRouteObservation({ route_id: capsuleSensitive.route_id, observation_id: "obs_capsule", observed_at: "2026-08-22T10:02:00.000Z", outcome: { status: "failure", error: "private response body", metadata: { api_key: "secret" } } })], [policy], "2026-08-24T12:00:00.000Z");
+const capsuleText = JSON.stringify(capsule);
+ok("evidence capsules strip private descriptions, endpoints, errors, metadata, and extensions", !capsuleText.includes("private prompt") && !capsuleText.includes("private policy note") && !capsuleText.includes("private.invalid") && !capsuleText.includes("private response") && !capsuleText.includes("secret") && !capsuleText.includes("never-render-this"));
+ok("evidence capsules verify payload and root hashes", verifyEvidenceCapsule(capsule).valid);
+const tamperedCapsule = JSON.parse(JSON.stringify(capsule));
+tamperedCapsule.payload.records[0].candidates[0].model = "tampered";
+ok("evidence capsules detect tampering", !verifyEvidenceCapsule(tamperedCapsule).valid);
+const inconsistentCapsule = JSON.parse(JSON.stringify(capsule));
+inconsistentCapsule.payload.replay.decisions = 999;
+inconsistentCapsule.manifest.payload_sha256 = "sha256:forged";
+ok("evidence capsules reject derived summaries that disagree with receipts", verifyEvidenceCapsule(inconsistentCapsule).errors.some((error) => error.includes("replay summary")));
+ok("verified capsules render a standalone Decision Lab", renderCapsuleLab(capsule).includes("AgentRoute Decision Lab"));
+
+const observatoryScratch = mkdtempSync(join(tmpdir(), "agentroute-observatory-"));
+try {
+  const observatoryLedger = join(observatoryScratch, "routes.route.jsonl");
+  writeFileSync(observatoryLedger, `${JSON.stringify(valid)}\n${JSON.stringify(observedValid)}\n`);
+  const observatory = await startObservatory(observatoryLedger, { port: 0 });
+  try {
+    const response = await fetch(`${observatory.address.url}/api/snapshot`);
+    const snapshot = await response.json() as { replay: { decisions: number }; lab: { routes: Array<{ task_type: string }> } };
+    ok("Live Route Observatory serves a privacy-safe local snapshot", response.ok && snapshot.replay.decisions === 1 && snapshot.lab.routes[0].task_type === "code_review");
+    const html = await (await fetch(observatory.address.url)).text();
+    ok("Live Route Observatory serves a self-contained dashboard", html.includes("Route Observatory") && !html.includes("https://"));
+  } finally { await observatory.close(); }
+  let remoteRefused = false;
+  try { await startObservatory(observatoryLedger, { host: "0.0.0.0", port: 0 }); } catch (error) { remoteRefused = String((error as Error).message).includes("refusing non-loopback"); }
+  ok("Live Route Observatory refuses remote binding by default", remoteRefused);
+} finally { rmSync(observatoryScratch, { recursive: true, force: true }); }
 
 console.log("source adapters");
 const openrouter = fromOpenRouterRoute({ id: "gen_1", model: "model-r", provider_name: "provider-r", total_cost: 0.01, authorization: "must-not-copy" }, { routeId: "route_or" });
@@ -368,10 +479,10 @@ ok("Decision Lab escapes receipt text before embedding", !hostileHtml.includes("
 console.log("connector catalog");
 const readyConnectors = listConnectors({ status: "available" });
 const partialPolicyTargets = listConnectors({ status: "partial", role: "policy-target" });
-ok("connector catalog distinguishes complete from capability-partial work", readyConnectors.some((item) => item.id === "cloudflare-ai-gateway") && !readyConnectors.some((item) => item.id === "portkey"));
-ok("connector catalog marks vendor imports ready while policy export remains planned", partialPolicyTargets.map((item) => item.id).join(",") === "portkey,vercel-ai-gateway" && partialPolicyTargets.every((item) => item.capability_status?.["policy-export"] === "planned"));
+ok("connector catalog marks tested imports and dry-run compilers available", readyConnectors.some((item) => item.id === "cloudflare-ai-gateway") && readyConnectors.some((item) => item.id === "portkey") && readyConnectors.some((item) => item.id === "vercel-ai-gateway"));
+ok("connector catalog has no capability-partial policy targets after compiler delivery", partialPolicyTargets.length === 0);
 ok("connector catalog exposes measured gateway observation import", listConnectors({ capability: "observation-import" }).map((item) => item.id).join(",") === "portkey,vercel-ai-gateway,cloudflare-ai-gateway");
-ok("connector catalog renders an honest capability status legend", formatConnectorCatalog().includes("decision-import:ready") && formatConnectorCatalog().includes("policy-export:planned"));
+ok("connector catalog renders tested policy-export capabilities", formatConnectorCatalog().includes("policy-export") && !formatConnectorCatalog().includes("policy-export:planned"));
 
 console.log("OpenTelemetry and published artifacts");
 const otelText = JSON.stringify(routeToOtel({ decision: valid, observations: [] }));

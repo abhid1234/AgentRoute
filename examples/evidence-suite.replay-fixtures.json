@@ -1,0 +1,16 @@
+{
+  "fixtures": [
+    {
+      "route_id": "route_example_code_review",
+      "candidate_id": "deep-review",
+      "estimated_cost_usd": 0.04,
+      "outcome": { "status": "success", "quality": 0.94, "latency_ms": 1410, "cost_usd": 0.038 }
+    },
+    {
+      "route_id": "route_example_code_review",
+      "candidate_id": "fast-review",
+      "estimated_cost_usd": 0.01,
+      "outcome": { "status": "success", "quality": 0.88, "latency_ms": 470, "cost_usd": 0.009 }
+    }
+  ]
+}

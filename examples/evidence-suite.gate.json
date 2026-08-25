@@ -1,0 +1,9 @@
+{
+  "minimum_samples": 1,
+  "minimum_observation_coverage": 0.8,
+  "maximum_cost_increase_percent": 15,
+  "maximum_latency_increase_percent": 20,
+  "minimum_quality_delta": -0.02,
+  "maximum_policy_violations": 0,
+  "insufficient_evidence": "fail"
+}

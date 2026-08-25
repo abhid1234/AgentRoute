@@ -7,23 +7,22 @@ auditable.
 
 ```mermaid
 flowchart TB
-  APP[Agents, applications, and gateway execution] --> PROVIDERS[OpenAI, Anthropic, Google, xAI, Bedrock, Fireworks]
-  APP --> ROUTERS[OpenRouter and LiteLLM]
-  APP --> CONTROL[Portkey and Vercel AI Gateway]
-  APP --> EDGE[Cloudflare AI Gateway]
-  ROUTERS -->|route import| ALLOW[Strict metadata allowlist]
-  CONTROL -->|ar ingest| ALLOW
-  EDGE -->|ar ingest| ALLOW
-  BRAIN[Braintrust scores] -->|numeric allowlist| OBSERVE
-  ALLOW --> DECISION[Decision receipt]
-  ALLOW --> OBSERVE[Measured observation]
-  DECISION --> LEDGER[(Append-only ledger)]
-  OBSERVE --> LEDGER
-  LEDGER --> ANALYZE[Audit, replay, simulation]
-  ANALYZE --> LAB[Decision Lab]
+  APP[Agents and applications] --> EXEC[Model and gateway execution]
+  EXEC --> SOURCES[OpenRouter, LiteLLM, Portkey, Vercel, Cloudflare]
+  SOURCES -->|allowlisted metadata| CAPTURE[Receipt capture and ingest]
+  BRAIN[Braintrust evaluations] -->|numeric scores| CAPTURE
+  CAPTURE --> LEDGER[(Append-only evidence ledger)]
+  LEDGER --> ANALYZE[Audit, replay, simulation, Decision Lab]
+  LEDGER --> ARENA[Shadow Replay Arena]
+  ARENA -->|measured candidate receipts| LEDGER
+  LEDGER --> OBS[Live Route Observatory]
+  LEDGER --> GATE[Routing quality gate and GitHub CI]
+  LEDGER --> CAPSULE[Portable evidence capsule]
+  ANALYZE --> POLICY[Versioned policy registry]
+  POLICY --> COMPILE[Dry-run vendor compilers]
+  COMPILE --> REVIEW[Human review and apply]
+  REVIEW -. explicit external action .-> SOURCES
   LEDGER -->|privacy-safe spans| OTEL[OpenTelemetry]
-  LAB --> POLICY[Reviewed policy proposal]
-  POLICY -. planned human-approved path .-> EXPORT[Gateway policy export adapters]
 ```
 
 The rendered and editable versions live in `diagrams/agentroute-integration-plane.*`.
@@ -74,13 +73,15 @@ explain exactly what evidence is missing and which analysis is disabled.
 - Policy controls re-rank only full candidate sets with complete quality,
   latency, and cost scores.
 
-## Next durable layers
+## Evidence workflows
 
-The architecture intentionally leaves room for three later modules without
-turning AgentRoute into a gateway:
-
-1. **Replay runner** — execute permitted alternatives and append real outcomes.
-2. **Evaluator plugins** — deterministic, human, and model-judge adapters behind
-   one versioned result contract.
-3. **Policy registry** — reviewed, versioned recommendations with export adapters
-   for OpenRouter, LiteLLM, Portkey, Vercel AI Gateway, or application-native routers.
+- **Shadow Replay Arena** executes only through an explicitly supplied executor.
+  The bundled CLI executor is offline fixtures, with hard request and cost stops.
+- **Live Route Observatory** serves the safe Decision Lab projection and evidence
+  health from loopback. It is read-only and has no remote assets.
+- **Routing quality gate** turns measured cost, latency, quality, coverage, and
+  policy violations into a deterministic pull-request check.
+- **Policy registry** validates, versions, diffs, and compiles review-only
+  artifacts for native routers, OpenRouter, LiteLLM, Portkey, and Vercel AI Gateway.
+- **Evidence capsules** package sanitized receipts, policies, audit, and replay
+  summaries into a tamper-evident `.arcap` file that can reopen as a Decision Lab.

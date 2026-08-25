@@ -1,29 +1,21 @@
 flowchart TB
-  APP[Agents, applications, and gateway execution] --> PROVIDERS[OpenAI, Anthropic, Google, xAI, Bedrock, Fireworks]
+  APP[Agents and applications] --> EXEC[Model and gateway execution]
+  EXEC --> SOURCES[OpenRouter, LiteLLM, Portkey, Vercel, Cloudflare]
+  SOURCES -->|allowlisted metadata| CAPTURE[Receipt capture and ingest]
+  BRAIN[Braintrust evaluations] -->|numeric scores| CAPTURE
+  CAPTURE --> LEDGER[(Append-only evidence ledger)]
 
-  subgraph sources[Working source adapters]
-    ROUTERS[OpenRouter and LiteLLM]
-    CONTROL[Portkey and Vercel AI Gateway]
-    EDGE[Cloudflare AI Gateway]
+  subgraph evidence[Evidence workflows]
+    LEDGER --> ANALYZE[Audit, replay, simulation, Decision Lab]
+    LEDGER --> ARENA[Shadow Replay Arena]
+    ARENA -->|measured candidate receipts| LEDGER
+    LEDGER --> OBS[Live Route Observatory]
+    LEDGER --> GATE[Routing quality gate and GitHub CI]
+    LEDGER --> CAPSULE[Portable evidence capsule]
   end
 
-  APP --> ROUTERS
-  APP --> CONTROL
-  APP --> EDGE
-  ROUTERS -->|route import| ALLOW[Strict metadata allowlist]
-  CONTROL -->|ar ingest| ALLOW
-  EDGE -->|ar ingest| ALLOW
-  BRAIN[Braintrust scores] -->|numeric allowlist| OBSERVE
-
-  subgraph core[AgentRoute evidence core]
-    ALLOW --> DECISION[Decision receipt]
-    ALLOW --> OBSERVE[Measured observation]
-    DECISION --> LEDGER[(Append-only ledger)]
-    OBSERVE --> LEDGER
-    LEDGER --> ANALYZE[Audit, replay, simulation]
-    ANALYZE --> LAB[Decision Lab]
-  end
-
+  ANALYZE --> POLICY[Versioned policy registry]
+  POLICY --> COMPILE[Dry-run vendor compilers]
+  COMPILE --> REVIEW[Human review and apply]
+  REVIEW -. explicit external action .-> SOURCES
   LEDGER -->|privacy-safe spans| OTEL[OpenTelemetry]
-  LAB --> POLICY[Reviewed policy proposal]
-  POLICY -. planned human-approved path .-> EXPORT[Gateway policy export adapters]
