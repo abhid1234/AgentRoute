@@ -3,21 +3,23 @@
 AgentRoute integrates at evidence boundaries, not by taking over inference. A
 gateway can contribute a decision receipt, an evaluator can append an
 observation, and a telemetry backend can receive a sanitized span. Policy
-changes flow back only through a reviewed export adapter.
+changes flow back only through a reviewed dry-run compiler and a separate human
+apply step.
 
 Run `ar connectors` for the catalog embedded in the release. `READY` means all
-listed paths are tested. `PARTIAL` labels each capability separately, such as
-`decision-import:ready` and `policy-export:planned`.
+listed paths are tested. A `policy-export` capability means AgentRoute can
+compile a local review artifact; it never means the vendor configuration was
+applied.
 
 | System | Role | State | Most useful AgentRoute surface |
 |---|---|---:|---|
 | Application-native router | Router | Ready | Emit the JSON/JSONL receipt contract directly |
-| OpenRouter | Router and gateway | Ready | Metadata import and explicit non-streaming capture |
-| LiteLLM | Router and gateway | Ready | Callback/logging metadata import |
+| OpenRouter | Router, gateway, and policy target | Ready | Metadata import, explicit capture, and dry-run provider preferences |
+| LiteLLM | Router, gateway, and policy target | Ready | Metadata import and dry-run proxy config |
 | Exa | Task source | Ready | Fresh, source-linked evaluation task packs |
 | OpenTelemetry | Telemetry | Ready | Privacy-safe routing-decision span export |
-| Portkey | Gateway and policy target | Partial | Decision and observation import ready; reviewed config export planned |
-| Vercel AI Gateway | Gateway and policy target | Partial | Provider/fallback decision import ready; policy export planned |
+| Portkey | Gateway and policy target | Ready | Evidence import and review-only routing config artifact |
+| Vercel AI Gateway | Gateway and policy target | Ready | Evidence import and review-only AI SDK provider options |
 | Cloudflare AI Gateway | Gateway and telemetry | Ready | Log import into decisions plus measured operational observations |
 | Braintrust | Evaluator and telemetry | Ready | Numeric experiment and online-score evaluation import |
 
@@ -85,6 +87,24 @@ ar evaluate braintrust braintrust-score.json --ledger routes.route.jsonl
 Use `--complete-candidates` only when the source candidate list is a complete
 routing-time snapshot. Otherwise the importer records `partial` or
 `selected-only` fidelity and blocks unsupported counterfactual claims.
+
+## Dry-run policy compilers
+
+Policy compilation is local and credential-free. Every artifact carries its
+source policy ID, semantic version, SHA-256 fingerprint, `dry_run: true`, an
+official documentation link, and target-specific caveats.
+
+```bash
+ar policy validate examples/evidence-suite.policy.json
+ar policy compile examples/evidence-suite.policy.json --target openrouter
+ar policy compile examples/evidence-suite.policy.json --target litellm
+ar policy compile examples/evidence-suite.policy.json --target portkey
+ar policy compile examples/evidence-suite.policy.json --target vercel-ai-gateway
+```
+
+The Portkey output is deliberately labeled as a review artifact because
+workspace integration IDs and the exact apply API are account-specific. No
+compiler reads a vendor token or performs a network request.
 
 ## Accepted source fields
 
