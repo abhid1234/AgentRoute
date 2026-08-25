@@ -1,5 +1,6 @@
 // AgentRoute behavioral and adversarial tests.
 import { execFileSync } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -32,9 +33,11 @@ import { captureOpenRouter } from "../src/openrouter-capture.js";
 import { evaluationToObservation, evaluateChecklist, fromBraintrustEvaluation } from "../src/evaluation.js";
 import { buildDecisionLabModel, renderDecisionLab } from "../src/decision-lab.js";
 import { auditRouteRecords } from "../src/route-audit.js";
-import { createEvidenceCapsule, renderCapsuleLab, verifyEvidenceCapsule } from "../src/capsule.js";
+import { createEvidenceCapsule, renderCapsuleLab, signEvidenceCapsule, verifyEvidenceCapsule } from "../src/capsule.js";
+import { analyzeReplayExperiment } from "../src/experiment.js";
 import { startObservatory } from "../src/observatory.js";
 import { compilePolicy, diffPolicies, validatePolicyRegistry } from "../src/policy-registry.js";
+import { addPolicyToRegistry, initializePolicyRegistry, loadPolicyRegistry, transitionPolicyInRegistry } from "../src/policy-store.js";
 import { evaluateRouteGate, formatGitHubGate } from "../src/quality-gate.js";
 import { fixtureReplayExecutor, runReplayArena } from "../src/replay-arena.js";
 import { formatReceiptDetail, formatRouteReport } from "../src/route-report.js";
@@ -171,6 +174,14 @@ try {
   writeFileSync(cliPolicy, JSON.stringify({ policy_version: "0.1", id: "cli-policy", version: "1.0.0", status: "reviewed", weights: { quality: 0.6, latency: 0.2, cost: 0.2 }, models: [{ model: "model-a", provider: "provider-a" }, { model: "model-b", provider: "provider-b" }] }));
   const compiledPolicy = execFileSync(process.execPath, ["--import", "tsx", cli, "policy", "compile", cliPolicy, "--target", "openrouter"], { encoding: "utf8" });
   ok("CLI compiles review-only vendor policy artifacts", JSON.parse(compiledPolicy).dry_run === true && JSON.parse(compiledPolicy).config.models.length === 2);
+  const registryPath = join(scratch, "policies.registry.json");
+  const draftPolicyPath = join(scratch, "draft-policy.json");
+  writeFileSync(draftPolicyPath, JSON.stringify({ ...JSON.parse(readFileSync(cliPolicy, "utf8")), status: "draft" }));
+  execFileSync(process.execPath, ["--import", "tsx", cli, "policy", "registry", "init", registryPath], { encoding: "utf8" });
+  execFileSync(process.execPath, ["--import", "tsx", cli, "policy", "registry", "add", registryPath, draftPolicyPath, "--actor", "cli-test", "--reason", "initial proposal", "--occurred-at", "2026-08-24T12:00:00.000Z"], { encoding: "utf8" });
+  execFileSync(process.execPath, ["--import", "tsx", cli, "policy", "registry", "transition", registryPath, "cli-policy@1.0.0", "--to", "reviewed", "--actor", "cli-test", "--reason", "review complete", "--occurred-at", "2026-08-24T12:01:00.000Z"], { encoding: "utf8" });
+  const registryOutput = execFileSync(process.execPath, ["--import", "tsx", cli, "policy", "registry", "list", registryPath], { encoding: "utf8" });
+  ok("CLI persists policy lifecycle history", JSON.parse(registryOutput).policies[0].status === "reviewed" && JSON.parse(registryOutput).events.length === 2);
   const arenaTasks = join(scratch, "arena-tasks.json");
   const arenaFixtures = join(scratch, "arena-fixtures.json");
   const arenaLedger = join(scratch, "arena.route.jsonl");
@@ -181,6 +192,8 @@ try {
   ] }));
   const arenaCliReport = execFileSync(process.execPath, ["--import", "tsx", cli, "arena", ledger, "--tasks", arenaTasks, "--fixtures", arenaFixtures, "--max-requests", "2", "--max-cost-usd", "0.05", "--ledger", arenaLedger], { encoding: "utf8" });
   ok("CLI runs a budgeted offline replay and writes conformant receipts", JSON.parse(arenaCliReport).requests_executed === 2 && validateRouteLedger(parseRouteRecords(readFileSync(arenaLedger, "utf8"))).valid);
+  const experimentOutput = execFileSync(process.execPath, ["--import", "tsx", cli, "experiment", "analyze", arenaLedger, "--baseline-candidate", "winner", "--challenger", "runner-up"], { encoding: "utf8" });
+  ok("CLI analyzes paired replay experiments", JSON.parse(experimentOutput).comparisons[0].matched_pairs === 1);
   const gateConfig = join(scratch, "gate.json");
   writeFileSync(gateConfig, JSON.stringify({ minimum_samples: 1, minimum_observation_coverage: 1, maximum_cost_increase_percent: 0 }));
   const gateOutput = execFileSync(process.execPath, ["--import", "tsx", cli, "gate", ledger, "--baseline", ledger, "--config", gateConfig], { encoding: "utf8" });
@@ -191,6 +204,15 @@ try {
   const capsuleVerification = execFileSync(process.execPath, ["--import", "tsx", cli, "capsule", "verify", capsulePath], { encoding: "utf8" });
   execFileSync(process.execPath, ["--import", "tsx", cli, "capsule", "open", capsulePath, "-o", capsuleLab], { encoding: "utf8" });
   ok("CLI creates, verifies, and reopens portable evidence capsules", JSON.parse(capsuleVerification).valid && readFileSync(capsuleLab, "utf8").includes("Decision Lab"));
+  const cliKeys = generateKeyPairSync("ed25519");
+  const privateKeyPath = join(scratch, "capsule-private.pem");
+  const publicKeyPath = join(scratch, "capsule-public.pem");
+  const signedCapsulePath = join(scratch, "signed-evidence.arcap");
+  writeFileSync(privateKeyPath, cliKeys.privateKey.export({ type: "pkcs8", format: "pem" }).toString());
+  writeFileSync(publicKeyPath, cliKeys.publicKey.export({ type: "spki", format: "pem" }).toString());
+  execFileSync(process.execPath, ["--import", "tsx", cli, "capsule", "sign", capsulePath, "--private-key", privateKeyPath, "-o", signedCapsulePath], { encoding: "utf8" });
+  const trustedVerification = execFileSync(process.execPath, ["--import", "tsx", cli, "capsule", "verify", signedCapsulePath, "--require-signature", "--public-key", publicKeyPath], { encoding: "utf8" });
+  ok("CLI signs capsules and verifies a pinned signer", JSON.parse(trustedVerification).signature_trusted === true);
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }
@@ -209,6 +231,29 @@ const arena = await runReplayArena([valid], {
 ok("Shadow Replay Arena creates conformant candidate receipts", arena.requests_executed === 2 && validateRouteLedger(arena.records).valid);
 ok("Shadow Replay Arena calculates actual quality regret only from measured alternatives", arena.comparisons[0].winner_candidate_id === "runner-up" && arena.comparisons[0].actual_quality_regret === 0.2);
 ok("Shadow Replay Arena strips executor errors, metadata, and model output", !JSON.stringify(arena).includes("private executor") && !JSON.stringify(arena).includes("private model output"));
+const researchDecision = createRouteDecision({ ...valid, route_id: "route_experiment_research", task: { type: "research" } });
+const researchArena = await runReplayArena([researchDecision], {
+  run_id: "arena_research",
+  generated_at: "2026-08-24T12:01:00.000Z",
+  tasks: [{ route_id: researchDecision.route_id, task_ref: "task-pack://research/1" }],
+  limits: { max_requests: 2, max_cost_usd: 0.05 },
+  executor: fixtureReplayExecutor([
+    { route_id: researchDecision.route_id, candidate_id: "winner", estimated_cost_usd: 0.02, outcome: { status: "success", quality: 0.95, latency_ms: 110, cost_usd: 0.02 } },
+    { route_id: researchDecision.route_id, candidate_id: "runner-up", estimated_cost_usd: 0.01, outcome: { status: "success", quality: 0.85, latency_ms: 50, cost_usd: 0.01 } },
+  ]),
+});
+const experiment = analyzeReplayExperiment([...arena.records, ...researchArena.records], { baseline_candidate_id: "winner", challenger_candidate_ids: ["runner-up"], generated_at: "2026-08-24T12:02:00.000Z" });
+const experimentComparison = experiment.comparisons[0];
+ok("paired experiment analysis counts wins and losses on matched tasks", experimentComparison.matched_pairs === 2 && experimentComparison.challenger_quality_wins === 1 && experimentComparison.challenger_quality_losses === 1);
+ok("paired experiment analysis reports bounded Wilson uncertainty", experimentComparison.challenger_quality_win_rate === 0.5 && experimentComparison.challenger_quality_win_rate_95ci!.low > 0 && experimentComparison.challenger_quality_win_rate_95ci!.high < 1);
+ok("paired experiment analysis preserves task-type slices", experiment.by_task_type.code_review.comparisons[0].challenger_quality_wins === 1 && experiment.by_task_type.research.comparisons[0].challenger_quality_losses === 1);
+const incompleteExperiment = analyzeReplayExperiment([...arena.records.slice(0, 3), ...researchArena.records]);
+ok("paired experiment analysis warns about unobserved replay candidates", incompleteExperiment.warnings.some((warning) => warning.includes("has no observation")));
+ok("paired experiment analysis identifies slice-specific pairing gaps", incompleteExperiment.warnings.some((warning) => warning.includes("task_type:code_review") && warning.includes("no paired tasks")));
+const malformedArena = JSON.parse(JSON.stringify(arena.records)) as RouteRecord[];
+(malformedArena[0] as RouteDecision).extensions = { arena_run_id: "arena_test" };
+throws("paired experiment analysis rejects malformed attribution", () => analyzeReplayExperiment(malformedArena), "malformed Replay Arena attribution");
+throws("paired experiment analysis rejects invalid report timestamps", () => analyzeReplayExperiment(arena.records, { generated_at: "not-a-time" }), "generated_at");
 const budgetStop = await runReplayArena([valid], {
   run_id: "arena_budget",
   generated_at: "2026-08-24T12:00:00.000Z",
@@ -225,6 +270,25 @@ ok("quality gate fails measured regressions while retaining passing metrics", ga
 ok("quality gate renders GitHub annotations", formatGitHubGate(gate).startsWith("::error title=AgentRoute quality gate::FAIL"));
 const neutralGate = evaluateRouteGate([valid], [valid], { minimum_samples: 1, insufficient_evidence: "neutral" });
 ok("quality gate can mark insufficient evidence neutral", neutralGate.status === "neutral");
+const sliceCode = createRouteDecision({ ...valid, route_id: "route_slice_code", task: { type: "code_review" } });
+const sliceResearch = createRouteDecision({ ...valid, route_id: "route_slice_research", task: { type: "research" } });
+const sliceBaseline = [
+  sliceCode,
+  createRouteObservation({ route_id: sliceCode.route_id, observation_id: "obs_slice_code_base", observed_at: "2026-08-22T10:03:00.000Z", outcome: { status: "success", quality: 0.9 } }),
+  sliceResearch,
+  createRouteObservation({ route_id: sliceResearch.route_id, observation_id: "obs_slice_research_base", observed_at: "2026-08-22T10:03:00.000Z", outcome: { status: "success", quality: 0.5 } }),
+];
+const sliceCurrent = [
+  sliceCode,
+  createRouteObservation({ route_id: sliceCode.route_id, observation_id: "obs_slice_code_current", observed_at: "2026-08-22T10:03:00.000Z", outcome: { status: "success", quality: 0.7 } }),
+  sliceResearch,
+  createRouteObservation({ route_id: sliceResearch.route_id, observation_id: "obs_slice_research_current", observed_at: "2026-08-22T10:03:00.000Z", outcome: { status: "success", quality: 0.7 } }),
+];
+const aggregateOnlyGate = evaluateRouteGate(sliceBaseline, sliceCurrent, { minimum_samples: 1, minimum_quality_delta: -0.1 });
+const slicedGate = evaluateRouteGate(sliceBaseline, sliceCurrent, { minimum_samples: 1, minimum_quality_delta: -0.1, task_type_slices: true });
+ok("task slices reveal regressions hidden by aggregate averages", aggregateOnlyGate.status === "pass" && slicedGate.status === "fail" && slicedGate.slices?.code_review.status === "fail");
+const missingSliceGate = evaluateRouteGate(sliceBaseline, sliceCurrent.slice(0, 2), { minimum_samples: 1, task_type_slices: true });
+ok("task slices fail closed when a baseline segment disappears", missingSliceGate.status === "fail" && missingSliceGate.slices?.research.current_samples === 0);
 
 const policy = {
   policy_version: "0.1" as const,
@@ -245,6 +309,27 @@ const compiled = (["native", "openrouter", "litellm", "portkey", "vercel-ai-gate
 ok("policy compiler emits all five review-only targets with source fingerprints", compiled.every((artifact) => artifact.dry_run && artifact.source.fingerprint.startsWith("sha256:")));
 ok("Vercel compiler maps fallback models and provider ordering", JSON.stringify(compiled[4].config).includes("providerOptions") && JSON.stringify(compiled[4].config).includes("models"));
 
+const policyScratch = mkdtempSync(join(tmpdir(), "agentroute-policy-"));
+try {
+  const policyRegistryPath = join(policyScratch, "registry.json");
+  initializePolicyRegistry(policyRegistryPath);
+  const draftPolicy = { ...policy, status: "draft" as const };
+  const addedPolicy = addPolicyToRegistry(policyRegistryPath, draftPolicy, { actor: "mason", reason: "propose measured routing policy", occurred_at: "2026-08-24T13:00:00.000Z" });
+  const retryPolicy = addPolicyToRegistry(policyRegistryPath, draftPolicy, { actor: "mason", reason: "propose measured routing policy", occurred_at: "2026-08-24T13:00:00.000Z" });
+  ok("policy registry appends an auditable draft and makes exact retries idempotent", addedPolicy.change === "appended" && retryPolicy.change === "unchanged");
+  transitionPolicyInRegistry(policyRegistryPath, "balanced-code@1.0.0", "reviewed", { actor: "reviewer", reason: "evidence reviewed", occurred_at: "2026-08-24T13:01:00.000Z" });
+  throws("policy registry requires human attestation for approval", () => transitionPolicyInRegistry(policyRegistryPath, "balanced-code@1.0.0", "approved", { actor: "release-manager", reason: "approve policy", occurred_at: "2026-08-24T13:02:00.000Z" }), "human_attested");
+  transitionPolicyInRegistry(policyRegistryPath, "balanced-code@1.0.0", "approved", { actor: "abhi", reason: "explicit approval", occurred_at: "2026-08-24T13:02:00.000Z", human_attested: true });
+  transitionPolicyInRegistry(policyRegistryPath, "balanced-code@1.0.0", "deprecated", { actor: "abhi", reason: "superseded", occurred_at: "2026-08-24T13:03:00.000Z" });
+  const durableRegistry = loadPolicyRegistry(policyRegistryPath);
+  ok("policy registry persists the full guarded lifecycle", durableRegistry.policies[0].status === "deprecated" && durableRegistry.events?.length === 4);
+  throws("policy registry prevents transitions out of deprecated", () => transitionPolicyInRegistry(policyRegistryPath, "balanced-code@1.0.0", "approved", { actor: "abhi", reason: "try to restore", occurred_at: "2026-08-24T13:04:00.000Z", human_attested: true }), "invalid policy transition");
+  const tamperedRegistry = JSON.parse(readFileSync(policyRegistryPath, "utf8"));
+  tamperedRegistry.events[1].policy_fingerprint = `sha256:${"0".repeat(64)}`;
+  writeFileSync(policyRegistryPath, JSON.stringify(tamperedRegistry));
+  throws("policy registry rejects tampered lifecycle history", () => loadPolicyRegistry(policyRegistryPath), "fingerprint is invalid");
+} finally { rmSync(policyScratch, { recursive: true, force: true }); }
+
 const capsuleSensitive = createRouteDecision({ ...valid, route_id: "route_capsule", task: { type: "security", description: "private prompt" }, extensions: { unknown_secret: "never-render-this" } });
 const capsule = createEvidenceCapsule([capsuleSensitive, createRouteObservation({ route_id: capsuleSensitive.route_id, observation_id: "obs_capsule", observed_at: "2026-08-22T10:02:00.000Z", outcome: { status: "failure", error: "private response body", metadata: { api_key: "secret" } } })], [policy], "2026-08-24T12:00:00.000Z");
 const capsuleText = JSON.stringify(capsule);
@@ -258,16 +343,31 @@ inconsistentCapsule.payload.replay.decisions = 999;
 inconsistentCapsule.manifest.payload_sha256 = "sha256:forged";
 ok("evidence capsules reject derived summaries that disagree with receipts", verifyEvidenceCapsule(inconsistentCapsule).errors.some((error) => error.includes("replay summary")));
 ok("verified capsules render a standalone Decision Lab", renderCapsuleLab(capsule).includes("AgentRoute Decision Lab"));
+const capsuleKeys = generateKeyPairSync("ed25519");
+const capsulePrivateKey = capsuleKeys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+const capsulePublicKey = capsuleKeys.publicKey.export({ type: "spki", format: "pem" }).toString();
+const signedCapsule = signEvidenceCapsule(capsule, capsulePrivateKey);
+const embeddedSignature = verifyEvidenceCapsule(signedCapsule);
+const pinnedSignature = verifyEvidenceCapsule(signedCapsule, { require_signature: true, public_key_pem: capsulePublicKey });
+ok("signed capsules distinguish cryptographic validity from signer trust", embeddedSignature.signature_valid === true && embeddedSignature.signature_trusted === false && embeddedSignature.warnings.length === 1 && pinnedSignature.signature_trusted === true);
+const wrongCapsuleKey = generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" }).toString();
+ok("signed capsules reject an unrecognized signer", !verifyEvidenceCapsule(signedCapsule, { public_key_pem: wrongCapsuleKey }).valid);
+const damagedSignature = JSON.parse(JSON.stringify(signedCapsule));
+damagedSignature.signature.signature_base64 = `${damagedSignature.signature.signature_base64.slice(0, -4)}AAAA`;
+ok("signed capsules reject signature tampering", !verifyEvidenceCapsule(damagedSignature).valid);
+ok("signature-required verification rejects unsigned legacy capsules", !verifyEvidenceCapsule(capsule, { require_signature: true }).valid);
 
 const observatoryScratch = mkdtempSync(join(tmpdir(), "agentroute-observatory-"));
 try {
   const observatoryLedger = join(observatoryScratch, "routes.route.jsonl");
+  const observatoryExperimentLedger = join(observatoryScratch, "experiment.route.jsonl");
   writeFileSync(observatoryLedger, `${JSON.stringify(valid)}\n${JSON.stringify(observedValid)}\n`);
-  const observatory = await startObservatory(observatoryLedger, { port: 0 });
+  writeFileSync(observatoryExperimentLedger, `${arena.records.map((record) => JSON.stringify(record)).join("\n")}\n`);
+  const observatory = await startObservatory(observatoryLedger, { port: 0, experiment_ledger_path: observatoryExperimentLedger });
   try {
     const response = await fetch(`${observatory.address.url}/api/snapshot`);
-    const snapshot = await response.json() as { replay: { decisions: number }; lab: { routes: Array<{ task_type: string }> } };
-    ok("Live Route Observatory serves a privacy-safe local snapshot", response.ok && snapshot.replay.decisions === 1 && snapshot.lab.routes[0].task_type === "code_review");
+    const snapshot = await response.json() as { replay: { decisions: number }; lab: { routes: Array<{ task_type: string }> }; experiment: { comparisons: Array<{ matched_pairs: number }> } };
+    ok("Live Route Observatory serves a privacy-safe local snapshot", response.ok && snapshot.replay.decisions === 1 && snapshot.lab.routes[0].task_type === "code_review" && snapshot.experiment.comparisons[0].matched_pairs === 1);
     const html = await (await fetch(observatory.address.url)).text();
     ok("Live Route Observatory serves a self-contained dashboard", html.includes("Route Observatory") && !html.includes("https://"));
   } finally { await observatory.close(); }
@@ -496,6 +596,10 @@ const demoCorpus = parseRouteRecords(readFileSync(join(root, "examples/can-auto-
 ok("Auto Routing demo fixture is conformant and explicitly illustrative", validateRouteLedger(demoCorpus).valid && demoCorpus.every((record) => record.extensions?.demo_fixture === "illustrative-only"));
 const demoSeeds = JSON.parse(readFileSync(join(root, "examples/can-auto-routing-prove-it.tasks.json"), "utf8"));
 ok("Auto Routing demo defines ten grounded task seeds", Array.isArray(demoSeeds.seeds) && demoSeeds.seeds.length === 10);
+const governancePolicy = JSON.parse(readFileSync(join(root, "examples/experiment-governance.policy.draft.json"), "utf8"));
+ok("experiment governance policy example is compilable and starts in draft", compilePolicy(governancePolicy, "native").source.policy_version === "1.1.0" && governancePolicy.status === "draft");
+const governanceGateConfig = JSON.parse(readFileSync(join(root, "examples/experiment-governance.gate.json"), "utf8"));
+ok("experiment governance gate example enables fail-closed task slices", governanceGateConfig.task_type_slices === true && evaluateRouteGate(sliceBaseline, sliceCurrent, governanceGateConfig).slices?.code_review.status === "fail");
 const importFixtures = {
   portkey: importPortkeyRoute(JSON.parse(readFileSync(join(root, "examples/imports/portkey-log.json"), "utf8")), { routeId: "route_fixture_portkey" }),
   vercel: fromVercelAiGatewayRoute(JSON.parse(readFileSync(join(root, "examples/imports/vercel-ai-gateway-event.json"), "utf8")), { routeId: "route_fixture_vercel" }),

@@ -64,10 +64,10 @@ contracts. Capsule creation never includes task descriptions, endpoints,
 prompts, response bodies, credentials, arbitrary outcome metadata, or unknown
 extensions. A verified capsule can render a standalone Decision Lab.
 
-Capsule hashes detect accidental or unreviewed modification; they are not a
-digital signature and do not establish who created the capsule. Authentic
-provenance requires signing the `.arcap` file in the surrounding release or
-artifact system.
+Capsule hashes detect accidental or unreviewed modification but do not establish
+who created the capsule. The experiment-governance extension adds optional
+Ed25519 signatures over the capsule root. Verification still treats signature
+validity and trust in a caller-pinned public key as separate facts.
 
 ## Acceptance criteria
 

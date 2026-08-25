@@ -9,12 +9,17 @@ flowchart TB
     LEDGER --> ANALYZE[Audit, replay, simulation, Decision Lab]
     LEDGER --> ARENA[Shadow Replay Arena]
     ARENA -->|measured candidate receipts| LEDGER
-    LEDGER --> OBS[Live Route Observatory]
-    LEDGER --> GATE[Routing quality gate and GitHub CI]
+    ARENA --> EXPERIMENT[Paired experiment analysis]
+    EXPERIMENT -->|wins, deltas, uncertainty, slices| OBS[Live Route Observatory]
+    LEDGER --> OBS
+    LEDGER --> GATE[Global and task-slice quality gates]
     LEDGER --> CAPSULE[Portable evidence capsule]
+    CAPSULE --> SIGN[Ed25519 sign and trust verification]
   end
 
-  ANALYZE --> POLICY[Versioned policy registry]
+  ANALYZE --> POLICY[Durable policy registry and history]
+  EXPERIMENT --> POLICY
+  HUMAN[Explicit human approval] -->|attests approval| POLICY
   POLICY --> COMPILE[Dry-run vendor compilers]
   COMPILE --> REVIEW[Human review and apply]
   REVIEW -. explicit external action .-> SOURCES

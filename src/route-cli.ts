@@ -1,15 +1,18 @@
 // `ot route` command family. Parsing stays intentionally small and dependency
 // free so receipts work in the same airlocked environments as OpenTrajectory.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { createEvidenceCapsule, loadEvidenceCapsule, renderCapsuleLab, verifyEvidenceCapsule, writeEvidenceCapsule } from "./capsule.js";
+import { createEvidenceCapsule, loadEvidenceCapsule, renderCapsuleLab, signEvidenceCapsule, verifyEvidenceCapsule, writeEvidenceCapsule } from "./capsule.js";
 import { formatConnectorCatalog, isConnectorCapability, isConnectorRole, isConnectorStatus, listConnectors } from "./connectors.js";
 import type { ConnectorFilters } from "./connectors.js";
 import { evaluationToObservation, fromBraintrustEvaluation } from "./evaluation.js";
+import { analyzeReplayExperiment } from "./experiment.js";
 import { writeDecisionLab } from "./decision-lab.js";
 import { captureOpenRouter } from "./openrouter-capture.js";
 import { startObservatory } from "./observatory.js";
 import { compilePolicy, diffPolicies, validatePolicy } from "./policy-registry.js";
 import type { PolicyTarget } from "./policy-registry.js";
+import { addPolicyToRegistry, initializePolicyRegistry, loadPolicyRegistry, transitionPolicyInRegistry } from "./policy-store.js";
+import type { PolicyStatus } from "./policy-registry.js";
 import { evaluateRouteGate, formatGitHubGate } from "./quality-gate.js";
 import type { RouteGateConfig } from "./quality-gate.js";
 import { fixtureReplayExecutor, runReplayArena } from "./replay-arena.js";
@@ -88,13 +91,19 @@ const HELP = `AgentRoute — auditable model-routing receipts
   ar audit <routes.route.jsonl> [-o audit.json]
   ar lab <routes.route.jsonl> -o decision-lab.html
   ar arena <routes.route.jsonl> --tasks tasks.json --fixtures outcomes.json --max-requests N --max-cost-usd N [--ledger replay.route.jsonl] [-o report.json]
-  ar serve <routes.route.jsonl> [--host 127.0.0.1] [--port 4319] [--allow-remote]
+  ar serve <routes.route.jsonl> [--experiment-ledger replay.route.jsonl] [--host 127.0.0.1] [--port 4319] [--allow-remote]
+  ar experiment analyze <replay.route.jsonl> [--baseline-candidate ID] [--challenger ID] [--quality-tie-tolerance N]
   ar gate <current.route.jsonl> --baseline baseline.route.jsonl --config gate.json [--format json|github]
   ar policy validate <policy.json>
   ar policy diff <old-policy.json> <new-policy.json>
   ar policy compile <policy.json> --target <native|openrouter|litellm|portkey|vercel-ai-gateway> [-o config.json]
+  ar policy registry init <registry.json> [--force]
+  ar policy registry add <registry.json> <policy.json> --actor ID --reason TEXT
+  ar policy registry list <registry.json>
+  ar policy registry transition <registry.json> <id@version> --to STATUS --actor ID --reason TEXT [--human-approved]
   ar capsule create <routes.route.jsonl> -o evidence.arcap [--policy policy.json]
-  ar capsule verify <evidence.arcap>
+  ar capsule verify <evidence.arcap> [--require-signature] [--public-key public.pem]
+  ar capsule sign <evidence.arcap> --private-key private.pem -o signed.arcap
   ar capsule open <evidence.arcap> -o decision-lab.html
   ar connectors [--json] [--status available|partial|planned] [--role ROLE] [--capability CAPABILITY]
   ar task-pack exa <seeds.json> [-o task-pack.json]
@@ -300,13 +309,26 @@ export async function runRouteCli(args: string[]): Promise<void> {
   if (command === "serve") {
     const input = rest[0];
     if (!input) throw new Error("usage: ar serve <routes.route.jsonl> [--host 127.0.0.1] [--port 4319]");
-    const handle = await startObservatory(input, { host: option(rest, "--host"), port: numeric(rest, "--port"), allow_remote: rest.includes("--allow-remote") });
+    const handle = await startObservatory(input, { host: option(rest, "--host"), port: numeric(rest, "--port"), allow_remote: rest.includes("--allow-remote"), experiment_ledger_path: option(rest, "--experiment-ledger") });
     console.error(`AgentRoute Observatory listening at ${handle.address.url}`);
     await new Promise<void>((resolve) => {
       const stop = async (): Promise<void> => { await handle.close(); resolve(); };
       process.on("SIGINT", stop);
       process.on("SIGTERM", stop);
     });
+    return;
+  }
+
+  if (command === "experiment") {
+    const [action, input] = rest;
+    if (action !== "analyze" || !input) throw new Error("usage: ar experiment analyze <replay.route.jsonl> [--baseline-candidate ID]");
+    const challengers: string[] = [];
+    for (let index = 0; index < rest.length; index++) if (rest[index] === "--challenger" && rest[index + 1]) challengers.push(rest[index + 1]);
+    emit(analyzeReplayExperiment(loadRouteRecords(input), {
+      ...(option(rest, "--baseline-candidate") ? { baseline_candidate_id: option(rest, "--baseline-candidate") } : {}),
+      ...(challengers.length ? { challenger_candidate_ids: challengers } : {}),
+      ...(numeric(rest, "--quality-tie-tolerance") !== undefined ? { quality_tie_tolerance: numeric(rest, "--quality-tie-tolerance") } : {}),
+    }), option(rest, "-o", "--out"));
     return;
   }
 
@@ -326,6 +348,34 @@ export async function runRouteCli(args: string[]): Promise<void> {
 
   if (command === "policy") {
     const [action, first, second] = rest;
+    if (action === "registry") {
+      const registryAction = first;
+      const registryPath = second;
+      if (registryAction === "init" && registryPath) {
+        emit(initializePolicyRegistry(registryPath, rest.includes("--force")));
+        return;
+      }
+      if (registryAction === "add" && registryPath && rest[3]) {
+        const actor = option(rest, "--actor");
+        const reason = option(rest, "--reason");
+        if (!actor || !reason) throw new Error("policy registry add requires --actor and --reason");
+        emit(addPolicyToRegistry(registryPath, JSON.parse(readFileSync(rest[3], "utf8")), { actor, reason, ...(option(rest, "--occurred-at") ? { occurred_at: option(rest, "--occurred-at") } : {}) }));
+        return;
+      }
+      if (registryAction === "list" && registryPath) {
+        emit(loadPolicyRegistry(registryPath));
+        return;
+      }
+      if (registryAction === "transition" && registryPath && rest[3]) {
+        const toStatus = option(rest, "--to") as PolicyStatus | undefined;
+        const actor = option(rest, "--actor");
+        const reason = option(rest, "--reason");
+        if (!toStatus || !actor || !reason) throw new Error("policy registry transition requires --to, --actor, and --reason");
+        emit(transitionPolicyInRegistry(registryPath, rest[3], toStatus, { actor, reason, human_attested: rest.includes("--human-approved"), ...(option(rest, "--occurred-at") ? { occurred_at: option(rest, "--occurred-at") } : {}) }));
+        return;
+      }
+      throw new Error("usage: ar policy registry <init|add|list|transition> ...");
+    }
     if (action === "validate" && first) {
       const policy = validatePolicy(JSON.parse(readFileSync(first, "utf8")));
       emit({ valid: true, policy_id: policy.id, policy_version: policy.version, status: policy.status }, option(rest, "-o", "--out"));
@@ -358,9 +408,20 @@ export async function runRouteCli(args: string[]): Promise<void> {
     }
     if (action === "verify" && input) {
       const value = JSON.parse(readFileSync(input, "utf8"));
-      const result = verifyEvidenceCapsule(value);
+      const publicKeyPath = option(rest, "--public-key");
+      const result = verifyEvidenceCapsule(value, { require_signature: rest.includes("--require-signature"), ...(publicKeyPath ? { public_key_pem: readFileSync(publicKeyPath, "utf8") } : {}) });
       emit(result, option(rest, "-o", "--out"));
       if (!result.valid) throw new Error("AgentRoute evidence capsule verification failed");
+      return;
+    }
+    if (action === "sign" && input) {
+      const privateKeyPath = option(rest, "--private-key");
+      const output = option(rest, "-o", "--out");
+      if (!privateKeyPath || !output) throw new Error("capsule sign requires --private-key and -o <signed.arcap>");
+      if (existsSync(output) && !rest.includes("--force")) throw new Error(`${output} already exists; pass --force to replace it`);
+      const signed = signEvidenceCapsule(loadEvidenceCapsule(input), readFileSync(privateKeyPath, "utf8"));
+      writeEvidenceCapsule(output, signed);
+      console.error(`wrote signed AgentRoute evidence capsule -> ${output}`);
       return;
     }
     if (action === "open" && input) {
@@ -371,7 +432,7 @@ export async function runRouteCli(args: string[]): Promise<void> {
       console.error(`wrote verified capsule Decision Lab -> ${output}`);
       return;
     }
-    throw new Error("usage: ar capsule <create|verify|open> ...");
+    throw new Error("usage: ar capsule <create|verify|sign|open> ...");
   }
 
   if (command === "connectors") {

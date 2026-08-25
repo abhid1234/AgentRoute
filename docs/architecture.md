@@ -15,10 +15,15 @@ flowchart TB
   LEDGER --> ANALYZE[Audit, replay, simulation, Decision Lab]
   LEDGER --> ARENA[Shadow Replay Arena]
   ARENA -->|measured candidate receipts| LEDGER
-  LEDGER --> OBS[Live Route Observatory]
-  LEDGER --> GATE[Routing quality gate and GitHub CI]
+  ARENA --> EXPERIMENT[Paired experiment analysis]
+  EXPERIMENT -->|wins, deltas, uncertainty, slices| OBS[Live Route Observatory]
+  LEDGER --> OBS
+  LEDGER --> GATE[Global and task-slice quality gates]
   LEDGER --> CAPSULE[Portable evidence capsule]
-  ANALYZE --> POLICY[Versioned policy registry]
+  CAPSULE --> SIGN[Ed25519 sign and trust verification]
+  ANALYZE --> POLICY[Durable policy registry and history]
+  EXPERIMENT --> POLICY
+  HUMAN[Explicit human approval] -->|attests approval| POLICY
   POLICY --> COMPILE[Dry-run vendor compilers]
   COMPILE --> REVIEW[Human review and apply]
   REVIEW -. explicit external action .-> SOURCES
@@ -80,8 +85,14 @@ explain exactly what evidence is missing and which analysis is disabled.
 - **Live Route Observatory** serves the safe Decision Lab projection and evidence
   health from loopback. It is read-only and has no remote assets.
 - **Routing quality gate** turns measured cost, latency, quality, coverage, and
-  policy violations into a deterministic pull-request check.
-- **Policy registry** validates, versions, diffs, and compiles review-only
-  artifacts for native routers, OpenRouter, LiteLLM, Portkey, and Vercel AI Gateway.
+  policy violations into a deterministic pull-request check. Optional task-type
+  slices prevent a healthy global average from hiding a workload regression.
+- **Paired experiment analysis** compares candidates only on original tasks both
+  executed, then reports wins, ties, mean deltas, Wilson uncertainty, and task slices.
+- **Policy registry** persists an append-only lifecycle history, requires explicit
+  human attestation for approval, and compiles review-only artifacts for native
+  routers, OpenRouter, LiteLLM, Portkey, and Vercel AI Gateway.
 - **Evidence capsules** package sanitized receipts, policies, audit, and replay
   summaries into a tamper-evident `.arcap` file that can reopen as a Decision Lab.
+  Optional Ed25519 signatures separate payload integrity, signature validity, and
+  trust in a pinned signer.
