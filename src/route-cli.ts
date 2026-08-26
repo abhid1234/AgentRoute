@@ -6,12 +6,14 @@ import { formatConnectorCatalog, isConnectorCapability, isConnectorRole, isConne
 import type { ConnectorFilters } from "./connectors.js";
 import { evaluationToObservation, fromBraintrustEvaluation } from "./evaluation.js";
 import { analyzeReplayExperiment } from "./experiment.js";
+import { decideReplayExperiment } from "./experiment-protocol.js";
 import { writeDecisionLab } from "./decision-lab.js";
 import { captureOpenRouter } from "./openrouter-capture.js";
 import { startObservatory } from "./observatory.js";
 import { compilePolicy, diffPolicies, validatePolicy } from "./policy-registry.js";
 import type { PolicyTarget } from "./policy-registry.js";
 import { addPolicyToRegistry, initializePolicyRegistry, loadPolicyRegistry, transitionPolicyInRegistry } from "./policy-store.js";
+import { createPromotionDossier, loadPromotionDossier, renderPromotionDossier, verifyPromotionDossier, writePromotionDossier } from "./promotion-dossier.js";
 import type { PolicyStatus } from "./policy-registry.js";
 import { evaluateRouteGate, formatGitHubGate } from "./quality-gate.js";
 import type { RouteGateConfig } from "./quality-gate.js";
@@ -93,6 +95,7 @@ const HELP = `AgentRoute — auditable model-routing receipts
   ar arena <routes.route.jsonl> --tasks tasks.json --fixtures outcomes.json --max-requests N --max-cost-usd N [--ledger replay.route.jsonl] [-o report.json]
   ar serve <routes.route.jsonl> [--experiment-ledger replay.route.jsonl] [--host 127.0.0.1] [--port 4319] [--allow-remote]
   ar experiment analyze <replay.route.jsonl> [--baseline-candidate ID] [--challenger ID] [--quality-tie-tolerance N]
+  ar experiment decide <replay.route.jsonl> --protocol protocol.json [-o decision.json]
   ar gate <current.route.jsonl> --baseline baseline.route.jsonl --config gate.json [--format json|github]
   ar policy validate <policy.json>
   ar policy diff <old-policy.json> <new-policy.json>
@@ -101,6 +104,9 @@ const HELP = `AgentRoute — auditable model-routing receipts
   ar policy registry add <registry.json> <policy.json> --actor ID --reason TEXT
   ar policy registry list <registry.json>
   ar policy registry transition <registry.json> <id@version> --to STATUS --actor ID --reason TEXT [--human-approved]
+  ar promotion create <replay.route.jsonl> --protocol protocol.json --policy policy.json --baseline baseline.route.jsonl --current current.route.jsonl --gate gate.json --target TARGET -o review.arpromote
+  ar promotion verify <review.arpromote>
+  ar promotion open <review.arpromote> -o review.html
   ar capsule create <routes.route.jsonl> -o evidence.arcap [--policy policy.json]
   ar capsule verify <evidence.arcap> [--require-signature] [--public-key public.pem]
   ar capsule sign <evidence.arcap> --private-key private.pem -o signed.arcap
@@ -321,15 +327,25 @@ export async function runRouteCli(args: string[]): Promise<void> {
 
   if (command === "experiment") {
     const [action, input] = rest;
-    if (action !== "analyze" || !input) throw new Error("usage: ar experiment analyze <replay.route.jsonl> [--baseline-candidate ID]");
-    const challengers: string[] = [];
-    for (let index = 0; index < rest.length; index++) if (rest[index] === "--challenger" && rest[index + 1]) challengers.push(rest[index + 1]);
-    emit(analyzeReplayExperiment(loadRouteRecords(input), {
-      ...(option(rest, "--baseline-candidate") ? { baseline_candidate_id: option(rest, "--baseline-candidate") } : {}),
-      ...(challengers.length ? { challenger_candidate_ids: challengers } : {}),
-      ...(numeric(rest, "--quality-tie-tolerance") !== undefined ? { quality_tie_tolerance: numeric(rest, "--quality-tie-tolerance") } : {}),
-    }), option(rest, "-o", "--out"));
-    return;
+    if (action === "analyze" && input) {
+      const challengers: string[] = [];
+      for (let index = 0; index < rest.length; index++) if (rest[index] === "--challenger" && rest[index + 1]) challengers.push(rest[index + 1]);
+      emit(analyzeReplayExperiment(loadRouteRecords(input), {
+        ...(option(rest, "--baseline-candidate") ? { baseline_candidate_id: option(rest, "--baseline-candidate") } : {}),
+        ...(challengers.length ? { challenger_candidate_ids: challengers } : {}),
+        ...(numeric(rest, "--quality-tie-tolerance") !== undefined ? { quality_tie_tolerance: numeric(rest, "--quality-tie-tolerance") } : {}),
+      }), option(rest, "-o", "--out"));
+      return;
+    }
+    if (action === "decide" && input) {
+      const protocolPath = option(rest, "--protocol");
+      if (!protocolPath) throw new Error("experiment decide requires --protocol <protocol.json>");
+      const result = decideReplayExperiment(loadRouteRecords(input), JSON.parse(readFileSync(protocolPath, "utf8")));
+      emit(result, option(rest, "-o", "--out"));
+      if (result.status !== "pass") throw new Error(`AgentRoute experiment decision is ${result.status}`);
+      return;
+    }
+    throw new Error("usage: ar experiment <analyze|decide> ...");
   }
 
   if (command === "gate") {
@@ -392,6 +408,52 @@ export async function runRouteCli(args: string[]): Promise<void> {
       return;
     }
     throw new Error("usage: ar policy <validate|diff|compile> ...");
+  }
+
+  if (command === "promotion") {
+    const [action, input] = rest;
+    if (action === "create" && input) {
+      const protocolPath = option(rest, "--protocol");
+      const policyPath = option(rest, "--policy");
+      const previousPolicyPath = option(rest, "--previous-policy");
+      const baselinePath = option(rest, "--baseline");
+      const currentPath = option(rest, "--current");
+      const gatePath = option(rest, "--gate");
+      const output = option(rest, "-o", "--out");
+      if (!protocolPath || !policyPath || !baselinePath || !currentPath || !gatePath || !output) throw new Error("promotion create requires --protocol, --policy, --baseline, --current, --gate, and -o");
+      if (existsSync(output) && !rest.includes("--force")) throw new Error(`${output} already exists; pass --force to replace it`);
+      const targets: PolicyTarget[] = [];
+      for (let index = 0; index < rest.length; index++) if (rest[index] === "--target" && rest[index + 1]) targets.push(rest[index + 1] as PolicyTarget);
+      const protocol = JSON.parse(readFileSync(protocolPath, "utf8"));
+      const decision = decideReplayExperiment(loadRouteRecords(input), protocol);
+      const gate = evaluateRouteGate(loadRouteRecords(baselinePath), loadRouteRecords(currentPath), JSON.parse(readFileSync(gatePath, "utf8")) as RouteGateConfig);
+      const dossier = createPromotionDossier({
+        protocol,
+        decision,
+        candidate_policy: JSON.parse(readFileSync(policyPath, "utf8")),
+        ...(previousPolicyPath ? { previous_policy: JSON.parse(readFileSync(previousPolicyPath, "utf8")) } : {}),
+        gate,
+        targets,
+      });
+      writePromotionDossier(output, dossier);
+      console.error(`wrote AgentRoute promotion dossier (${dossier.payload.promotion.verdict}) -> ${output}`);
+      return;
+    }
+    if (action === "verify" && input) {
+      const result = verifyPromotionDossier(JSON.parse(readFileSync(input, "utf8")));
+      emit(result, option(rest, "-o", "--out"));
+      if (!result.valid) throw new Error("AgentRoute promotion dossier verification failed");
+      return;
+    }
+    if (action === "open" && input) {
+      const output = option(rest, "-o", "--out");
+      if (!output) throw new Error("promotion open requires -o <review.html>");
+      if (existsSync(output) && !rest.includes("--force")) throw new Error(`${output} already exists; pass --force to replace it`);
+      writeFileSync(output, renderPromotionDossier(loadPromotionDossier(input)));
+      console.error(`wrote verified AgentRoute promotion review -> ${output}`);
+      return;
+    }
+    throw new Error("usage: ar promotion <create|verify|open> ...");
   }
 
   if (command === "capsule") {
