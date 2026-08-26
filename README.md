@@ -175,6 +175,8 @@ The reproducible public demonstration contract is documented in
 Third-party adapter authors should start with
 [`docs/connector-sdk.md`](docs/connector-sdk.md), and telemetry mappings are
 documented in [`docs/interoperability.md`](docs/interoperability.md).
+Applications that deliberately supply a live replay executor should follow
+[`docs/live-benchmarking.md`](docs/live-benchmarking.md).
 
 The first end-to-end demo kit is documented in
 [`docs/can-auto-routing-prove-it.md`](docs/can-auto-routing-prove-it.md). Its

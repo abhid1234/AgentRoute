@@ -243,6 +243,15 @@ const arena = await runReplayArena([valid], {
   ]),
 });
 ok("Shadow Replay Arena creates conformant candidate receipts", arena.requests_executed === 2 && validateRouteLedger(arena.records).valid);
+ok("Shadow Replay Arena labels bundled fixture evidence as illustrative", arena.evidence_mode === "offline_conformance" && arena.result_label === "illustrative");
+const injectedArena = await runReplayArena([valid], {
+  run_id: "arena_injected",
+  generated_at: "2026-08-24T12:00:00.000Z",
+  tasks: [{ route_id: valid.route_id, task_ref: "task-pack://injected/1", candidate_ids: ["winner"] }],
+  limits: { max_requests: 1, max_cost_usd: 0.05 },
+  executor: { id: "user-reviewed-runner", estimateCostUsd: () => 0.02, execute: async () => ({ status: "success", quality: 0.9, cost_usd: 0.02 }) },
+});
+ok("Shadow Replay Arena labels injected executor results as user generated", injectedArena.evidence_mode === "user_supplied_execution" && injectedArena.result_label === "user_generated");
 ok("Shadow Replay Arena calculates actual quality regret only from measured alternatives", arena.comparisons[0].winner_candidate_id === "runner-up" && arena.comparisons[0].actual_quality_regret === 0.2);
 ok("Shadow Replay Arena strips executor errors, metadata, and model output", !JSON.stringify(arena).includes("private executor") && !JSON.stringify(arena).includes("private model output"));
 const researchDecision = createRouteDecision({ ...valid, route_id: "route_experiment_research", task: { type: "research" } });
@@ -766,8 +775,10 @@ try {
   const firstVerification = verifyProofPack(first);
   ok("proof pack binds an eligible offline evidence chain", firstVerification.valid && firstVerification.dossier_verdict === "eligible" && firstManifest.claim_scope === "offline_conformance");
   const proofDecision = JSON.parse(readFileSync(join(first, "experiment-decision.json"), "utf8"));
+  const proofArena = JSON.parse(readFileSync(join(first, "arena-report.json"), "utf8"));
   const proofGate = JSON.parse(readFileSync(join(first, "quality-gate.json"), "utf8"));
   ok("proof pack evaluates twelve matched cases across four required slices", proofDecision.analysis.comparisons[0].matched_pairs === 12 && Object.keys(proofDecision.analysis.by_task_type).length === 4);
+  ok("proof pack labels fixture results as offline and illustrative", proofArena.evidence_mode === "offline_conformance" && proofArena.result_label === "illustrative");
   ok("proof quality gate compares complete candidate ledgers by task slice", proofGate.baseline_samples === 12 && proofGate.current_samples === 12 && Object.keys(proofGate.slices).length === 4 && Object.values(proofGate.slices).every((slice) => (slice as { status: string }).status === "pass"));
   const firstFiles = readdirSync(first).sort();
   const secondFiles = readdirSync(second).sort();

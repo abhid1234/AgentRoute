@@ -18,6 +18,8 @@ released; entries below describe the intended first public release line.
   verification.
 - OpenTelemetry GenAI and OpenInference export profiles.
 - Connector SDK conformance contract and native reference adapter.
+- Explicit offline-versus-user-supplied evidence provenance on Replay Arena
+  reports, with a budget-bounded live executor contract.
 
 ### Security
 

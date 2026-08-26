@@ -46,6 +46,8 @@ export interface ReplayArenaReport {
   run_id: string;
   generated_at: string;
   executor_id: string;
+  evidence_mode: "offline_conformance" | "user_supplied_execution";
+  result_label: "illustrative" | "user_generated";
   requests_executed: number;
   requests_skipped: number;
   estimated_cost_usd: number;
@@ -203,6 +205,8 @@ export async function runReplayArena(records: RouteRecord[], options: ReplayAren
     run_id: runId,
     generated_at: generatedAt,
     executor_id: options.executor.id,
+    evidence_mode: options.executor.id === "offline-fixtures" ? "offline_conformance" : "user_supplied_execution",
+    result_label: options.executor.id === "offline-fixtures" ? "illustrative" : "user_generated",
     requests_executed: output.length / 2,
     requests_skipped: skipped,
     estimated_cost_usd: rounded(estimatedCost),
