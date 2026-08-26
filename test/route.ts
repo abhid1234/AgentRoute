@@ -1,8 +1,9 @@
 // AgentRoute behavioral and adversarial tests.
 import { execFileSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { request as httpRequest } from "node:http";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
@@ -73,6 +74,8 @@ function throws(name: string, action: () => unknown, includes?: string): void {
   try { action(); ok(name, false, "did not throw"); }
   catch (error) { ok(name, !includes || String((error as Error).message).includes(includes), String((error as Error).message)); }
 }
+
+ok("SHA-256 hashes bytes without UTF-8 replacement collisions", sha256(new Uint8Array([0xfe])) !== sha256(new Uint8Array([0xff])));
 
 const decision = (): RouteDecision => createRouteDecision({
   route_id: "route_test",
@@ -660,6 +663,15 @@ try {
     ok("Live Route Observatory serves a privacy-safe local snapshot", response.ok && snapshot.replay.decisions === 1 && snapshot.lab.routes[0].task_type === "code_review" && snapshot.experiment.comparisons[0].matched_pairs === 1);
     const html = await (await fetch(observatory.address.url)).text();
     ok("Live Route Observatory serves a self-contained dashboard", html.includes("Route Observatory") && !html.includes("https://"));
+    const reboundStatus = await new Promise<number>((resolve, reject) => {
+      const request = httpRequest({ hostname: "127.0.0.1", port: observatory.address.port, path: "/api/snapshot", headers: { Host: "attacker.example" } }, (response) => {
+        response.resume();
+        response.on("end", () => resolve(response.statusCode || 0));
+      });
+      request.on("error", reject);
+      request.end();
+    });
+    ok("Live Route Observatory rejects DNS-rebinding Host headers", reboundStatus === 403);
   } finally { await observatory.close(); }
   let remoteRefused = false;
   try { await startObservatory(observatoryLedger, { host: "0.0.0.0", port: 0 }); } catch (error) { remoteRefused = String((error as Error).message).includes("refusing non-loopback"); }
@@ -944,11 +956,13 @@ try {
   const changed = join(proofScratch, "changed");
   const membership = join(proofScratch, "membership");
   const malicious = join(proofScratch, "malicious");
+  const linked = join(proofScratch, "linked");
   const firstManifest = await buildProofPack({ output: first });
   const secondManifest = await buildProofPack({ output: second });
   await buildProofPack({ output: changed });
   await buildProofPack({ output: membership });
   await buildProofPack({ output: malicious });
+  await buildProofPack({ output: linked });
   const firstVerification = verifyProofPack(first);
   ok("proof pack binds an eligible offline evidence chain", firstVerification.valid && firstVerification.dossier_verdict === "eligible" && firstManifest.claim_scope === "offline_conformance");
   ok("proof pack exposes the operational caution without invalidating the evidence", firstVerification.operations_status === "attention" && firstVerification.timeline_status === "attention");
@@ -966,7 +980,19 @@ try {
   const firstFiles = readdirSync(first).sort();
   const secondFiles = readdirSync(second).sort();
   ok("clean proof runs emit the same file set", JSON.stringify(firstFiles) === JSON.stringify(secondFiles));
-  ok("clean proof runs are byte-identical", firstFiles.every((file) => readFileSync(join(first, file), "utf8") === readFileSync(join(second, file), "utf8")));
+  ok("clean proof runs are byte-identical", firstFiles.every((file) => {
+    const left = readFileSync(join(first, file));
+    const right = readFileSync(join(second, file));
+    return left.length === right.length && left.every((byte, index) => byte === right[index]);
+  }));
+  const linkedVictim = join(proofScratch, "must-not-overwrite.txt");
+  writeFileSync(linkedVictim, "preserve me\n");
+  rmSync(join(linked, "index.html"));
+  symlinkSync(linkedVictim, join(linked, "index.html"));
+  let linkedRefused = false;
+  try { await buildProofPack({ output: linked, force: true }); } catch (error) { linkedRefused = String((error as Error).message).includes("non-file entries"); }
+  ok("proof force mode refuses symlink overwrite targets", linkedRefused && readFileSync(linkedVictim, "utf8") === "preserve me\n");
+  ok("proof verification refuses symlink artifacts", verifyProofPack(linked).errors.some((error) => error.includes("missing artifact: index.html")));
   const unchangedDiff = compareProofPacks(first, second);
   ok("proof diff recognizes byte-identical verified packs", unchangedDiff.status === "unchanged" && unchangedDiff.artifacts.added.length === 0 && unchangedDiff.artifacts.removed.length === 0 && unchangedDiff.artifacts.modified.length === 0 && unchangedDiff.semantics.length === 0);
   const changedReport = readFileSync(join(changed, "index.html"), "utf8").replace("</body>", "<!-- reviewer-copy-change --></body>");

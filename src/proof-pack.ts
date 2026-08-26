@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createEvidenceCapsule, verifyEvidenceCapsule } from "./capsule.js";
@@ -108,13 +108,13 @@ function ensureOutputDirectory(path: string, force: boolean): void {
     mkdirSync(path, { recursive: true });
     return;
   }
-  if (!statSync(path).isDirectory()) throw new Error(`${path} exists and is not a directory`);
+  if (!lstatSync(path).isDirectory()) throw new Error(`${path} exists and is not a directory`);
   const entries = readdirSync(path);
   if (!entries.length) return;
   if (!force) throw new Error(`${path} is not empty; pass --force to replace a previous proof pack`);
   const unknown = entries.filter((entry) => !EXPECTED_FILES.has(entry));
   if (unknown.length) throw new Error(`${path} contains files AgentRoute will not overwrite: ${unknown.sort().join(", ")}`);
-  const nonFiles = entries.filter((entry) => !statSync(join(path, entry)).isFile());
+  const nonFiles = entries.filter((entry) => !lstatSync(join(path, entry)).isFile());
   if (nonFiles.length) throw new Error(`${path} contains non-file entries AgentRoute will not overwrite: ${nonFiles.sort().join(", ")}`);
 }
 
@@ -243,7 +243,7 @@ export async function buildProofPack(options: BuildProofPackOptions): Promise<Pr
   const operationsCurrent = operationalLedger(frozen.cases, "fast-review", GENERATED_AT);
   writeFileSync(join(options.output, "operations-baseline.route.jsonl"), operationsBaseline.map(canonicalJson).join("\n") + "\n");
   writeFileSync(join(options.output, "operations-current.route.jsonl"), operationsCurrent.map(canonicalJson).join("\n") + "\n");
-  for (const path of ["input-route-ledger.jsonl", "input-replay-tasks.json", "input-replay-fixtures.json", "operations-baseline.route.jsonl", "operations-current.route.jsonl"]) sources.push({ path, source: "generated-from:input-cases.json", sha256: sha256(readFileSync(join(options.output, path), "utf8")) });
+  for (const path of ["input-route-ledger.jsonl", "input-replay-tasks.json", "input-replay-fixtures.json", "operations-baseline.route.jsonl", "operations-current.route.jsonl"]) sources.push({ path, source: "generated-from:input-cases.json", sha256: sha256(readFileSync(join(options.output, path))) });
   writeCanonical(join(options.output, "inputs.json"), {
     proof_input_version: "0.1",
     claim_scope: "offline_conformance",
@@ -327,7 +327,7 @@ export async function buildProofPack(options: BuildProofPackOptions): Promise<Pr
   const artifacts = [...ARTIFACT_FILES].sort().map((path): ProofArtifact => ({
     path,
     media_type: mediaType(path),
-    sha256: sha256(readFileSync(join(options.output, path), "utf8")),
+    sha256: sha256(readFileSync(join(options.output, path))),
   }));
   const body: Omit<ProofManifest, "root_sha256"> = {
     proof_version: "0.1",
@@ -344,10 +344,12 @@ export async function buildProofPack(options: BuildProofPackOptions): Promise<Pr
 
 export function verifyProofPack(path: string): ProofVerification {
   const errors: string[] = [];
-  if (!existsSync(path) || !statSync(path).isDirectory()) return { valid: false, errors: ["proof pack directory does not exist"], artifact_count: 0 };
+  if (!existsSync(path) || !lstatSync(path).isDirectory()) return { valid: false, errors: ["proof pack directory does not exist"], artifact_count: 0 };
+  const manifestPath = join(path, "proof-manifest.json");
+  if (!existsSync(manifestPath) || !lstatSync(manifestPath).isFile()) return { valid: false, errors: ["proof manifest must be a regular file"], artifact_count: 0 };
   let manifest: ProofManifest;
   try {
-    const value = readJson(join(path, "proof-manifest.json"));
+    const value = readJson(manifestPath);
     if (!object(value)) return { valid: false, errors: ["proof manifest must be an object"], artifact_count: 0 };
     manifest = value as unknown as ProofManifest;
   } catch (error) { return { valid: false, errors: [`proof manifest: ${(error as Error).message}`], artifact_count: 0 }; }
@@ -371,8 +373,8 @@ export function verifyProofPack(path: string): ProofVerification {
   for (const artifact of artifacts) {
     if (!SAFE_ARTIFACT_PATH.test(artifact.path)) continue;
     const artifactPath = join(path, artifact.path);
-    if (!existsSync(artifactPath) || !statSync(artifactPath).isFile()) { errors.push(`missing artifact: ${artifact.path}`); continue; }
-    if (artifact.sha256 !== sha256(readFileSync(artifactPath, "utf8"))) errors.push(`artifact SHA-256 mismatch: ${artifact.path}`);
+    if (!existsSync(artifactPath) || !lstatSync(artifactPath).isFile()) { errors.push(`missing artifact: ${artifact.path}`); continue; }
+    if (artifact.sha256 !== sha256(readFileSync(artifactPath))) errors.push(`artifact SHA-256 mismatch: ${artifact.path}`);
   }
   let dossierVerdict: string | undefined;
   let operationsStatus: string | undefined;

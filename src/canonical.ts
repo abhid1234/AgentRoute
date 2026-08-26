@@ -10,5 +10,6 @@ export function canonicalJson(value: unknown): string {
 }
 
 export function sha256(value: unknown): string {
-  return `sha256:${createHash("sha256").update(typeof value === "string" ? value : canonicalJson(value)).digest("hex")}`;
+  const input = typeof value === "string" || value instanceof Uint8Array ? value : canonicalJson(value);
+  return `sha256:${createHash("sha256").update(input).digest("hex")}`;
 }

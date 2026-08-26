@@ -5,20 +5,24 @@
 declare module "node:fs" {
   interface FSWatcher { close(): void; }
   export function readFileSync(path: string, encoding: "utf8"): string;
-  export function writeFileSync(path: string, data: string): void;
+  export function readFileSync(path: string): Uint8Array;
+  export function writeFileSync(path: string, data: string | Uint8Array): void;
   export function appendFileSync(path: string, data: string): void;
   export function existsSync(path: string): boolean;
   export function mkdirSync(path: string, options?: { recursive?: boolean }): string | undefined;
   export function readdirSync(path: string): string[];
   export function statSync(path: string): { isFile(): boolean; isDirectory(): boolean };
+  export function lstatSync(path: string): { isFile(): boolean; isDirectory(): boolean };
   export function renameSync(oldPath: string, newPath: string): void;
   export function unlinkSync(path: string): void;
+  export function symlinkSync(target: string, path: string): void;
   export function watch(path: string, listener: () => void): FSWatcher;
 }
 
 declare module "node:http" {
   interface IncomingMessage {
     url?: string;
+    headers: Record<string, string | undefined>;
     on(event: "close", cb: () => void): void;
   }
   interface ServerResponse {
@@ -34,12 +38,22 @@ declare module "node:http" {
     address(): AddressInfo | string | null;
     close(cb: (error?: Error) => void): void;
   }
+  interface ClientResponse {
+    statusCode?: number;
+    resume(): void;
+    on(event: "end", cb: () => void): void;
+  }
+  interface ClientRequest {
+    on(event: "error", cb: (error: Error) => void): void;
+    end(): void;
+  }
   export function createServer(handler: (request: IncomingMessage, response: ServerResponse) => void): Server;
+  export function request(options: { hostname: string; port: number; path: string; headers?: Record<string, string> }, handler: (response: ClientResponse) => void): ClientRequest;
 }
 
 declare module "node:crypto" {
   interface Hash {
-    update(data: string): Hash;
+    update(data: string | Uint8Array): Hash;
     digest(encoding: "hex"): string;
   }
   export function createHash(algorithm: "sha256"): Hash;

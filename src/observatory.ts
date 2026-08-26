@@ -65,6 +65,16 @@ export async function startObservatory(ledgerPath: string, options: ObservatoryO
     response.setHeader("Cache-Control", "no-store");
     response.setHeader("X-Content-Type-Options", "nosniff");
     response.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'");
+    const address = server.address();
+    const boundPort = address && typeof address !== "string" ? address.port : port;
+    const expectedHosts = new Set([`127.0.0.1:${boundPort}`, `localhost:${boundPort}`, `[::1]:${boundPort}`]);
+    if (boundPort === 80) for (const loopback of LOOPBACK) expectedHosts.add(loopback === "::1" ? "[::1]" : loopback);
+    if (!options.allow_remote && !expectedHosts.has((request.headers.host || "").toLowerCase())) {
+      response.statusCode = 403;
+      response.setHeader("Content-Type", "application/json; charset=utf-8");
+      response.end(JSON.stringify({ error: "forbidden host" }));
+      return;
+    }
     if (path === "/") {
       response.statusCode = 200;
       response.setHeader("Content-Type", "text/html; charset=utf-8");
