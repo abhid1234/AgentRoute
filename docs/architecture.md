@@ -31,7 +31,9 @@ flowchart TB
   COMPILE --> DOSSIER
   DOSSIER --> REVIEW[Human review and apply]
   REVIEW -. explicit external action .-> SOURCES
-  LEDGER -->|privacy-safe spans| OTEL[OpenTelemetry]
+  SDK[Connector SDK conformance] --> CAPTURE
+  LEDGER -->|metadata-only spans| OTEL[OpenTelemetry GenAI]
+  LEDGER -->|metadata-only spans| OI[OpenInference]
 ```
 
 The rendered and editable versions live in `diagrams/agentroute-integration-plane.*`.
@@ -107,3 +109,40 @@ explain exactly what evidence is missing and which analysis is disabled.
   summaries into a tamper-evident `.arcap` file that can reopen as a Decision Lab.
   Optional Ed25519 signatures separate payload integrity, signature validity, and
   trust in a pinned signer.
+- **Connector conformance** validates adapter vocabulary, receipt sequences,
+  deterministic imports, and privacy markers without loading third-party code.
+- **Telemetry profiles** keep prompts, outputs, endpoints, credentials, and
+  arbitrary extensions out of both OpenTelemetry GenAI and OpenInference spans.
+
+## Public proof and release plane
+
+The release path is separate from runtime evidence. It creates reviewable
+artifacts but never publishes by default.
+
+```mermaid
+flowchart LR
+  CASES[12 frozen illustrative cases] --> RUN[Offline proof runner]
+  RUN --> RECEIPTS[24 replay executions and receipts]
+  RECEIPTS --> DECISION[Preregistered experiment decision]
+  RECEIPTS --> GATE[Baseline vs challenger slice gate]
+  DECISION --> DOSSIER[Verified promotion dossier]
+  GATE --> DOSSIER
+  RECEIPTS --> CAPSULE[Verified evidence capsule]
+  RECEIPTS --> EXPORTS[OTel GenAI and OpenInference]
+  DOSSIER --> MANIFEST[SHA-256 proof manifest]
+  CAPSULE --> MANIFEST
+  EXPORTS --> MANIFEST
+  MANIFEST --> REPORT[Standalone HTML report]
+  MANIFEST --> VERIFY[Fail-closed proof verification]
+  VERIFY --> PACK[npm package allowlist]
+  PACK --> SUPPLY[SBOM and artifact attestations]
+  SUPPLY --> APPROVAL[Protected human release approval]
+  APPROVAL -. explicit only .-> NPM[npm trusted publishing]
+```
+
+The default corpus is large enough to exercise global and per-slice coverage,
+but its outcomes remain illustrative. Live provider evidence must be generated
+separately with user-supplied executors and labelled provenance. The release
+workflow prepares a tarball, CycloneDX SBOM, and attestations; npm publication
+requires both removal of the package's private guard and approval in the
+protected `npm-publish` environment.
