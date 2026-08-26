@@ -34,6 +34,7 @@ import { captureOpenRouter } from "../src/openrouter-capture.js";
 import { evaluationToObservation, evaluateChecklist, fromBraintrustEvaluation } from "../src/evaluation.js";
 import { buildDecisionLabModel, renderDecisionLab } from "../src/decision-lab.js";
 import { evaluateRoutingDrift } from "../src/drift.js";
+import { analyzeRouteIncidents, renderIncidentReport } from "../src/incident.js";
 import { auditRouteRecords } from "../src/route-audit.js";
 import { createEvidenceCapsule, renderCapsuleLab, signEvidenceCapsule, verifyEvidenceCapsule } from "../src/capsule.js";
 import { analyzeReplayExperiment } from "../src/experiment.js";
@@ -138,6 +139,18 @@ ok("scenario output excludes endpoints and selection reasons", !JSON.stringify(o
 throws("scenario validation rejects unknown keys", () => validateRoutingScenario({ scenario_version: "0.1", id: "bad", apply: true }), "unknown keys");
 throws("scenario validation rejects invalid multipliers", () => validateRoutingScenario({ scenario_version: "0.1", id: "bad", cost_multipliers: [{ model: "x", multiplier: 0 }] }), "must be a finite number > 0");
 
+console.log("incident forensics");
+const incidentObservation = createRouteObservation({ route_id: violating.route_id, observation_id: "obs_incident", observed_at: "2026-08-25T12:00:00.000Z", outcome: { status: "failure", actual_model: "fallback-model", actual_provider: "provider-y", latency_ms: 1200, cost_usd: 3, quality: 0.1, error: "secret stack trace", metadata: { response: "private output" } } });
+const incidentReport = analyzeRouteIncidents([violating, incidentObservation, selectedOnly], "2026-08-25T13:00:00.000Z");
+ok("incident forensics detects failures, execution mismatches, and measured breaches", incidentReport.status === "critical" && incidentReport.findings.some((finding) => finding.category === "outcome-failure") && incidentReport.findings.some((finding) => finding.category === "actual-model-mismatch") && incidentReport.findings.some((finding) => finding.category === "cost-budget-breach") && incidentReport.findings.some((finding) => finding.category === "quality-floor-breach"));
+ok("incident forensics exposes incomplete and missing evidence", incidentReport.findings.some((finding) => finding.category === "candidate-evidence-incomplete" && finding.route_id === selectedOnly.route_id) && incidentReport.findings.some((finding) => finding.category === "observation-missing" && finding.route_id === selectedOnly.route_id));
+ok("incident finding IDs and ordering are deterministic", JSON.stringify(incidentReport) === JSON.stringify(analyzeRouteIncidents([violating, incidentObservation, selectedOnly], "2026-08-25T13:00:00.000Z")) && incidentReport.findings[0].severity === "critical");
+const incidentJson = JSON.stringify(incidentReport);
+ok("incident reports exclude error text, metadata, endpoints, and selection reasons", !incidentJson.includes("secret stack trace") && !incidentJson.includes("private output") && !incidentJson.includes("private.invalid") && !incidentJson.includes("forced"));
+const incidentHtml = renderIncidentReport(incidentReport);
+ok("incident review HTML is standalone and script-free", incidentHtml.includes("Incident review") && incidentHtml.includes("outcome-failure") && !incidentHtml.includes("<script") && !incidentHtml.includes("https://") && !incidentHtml.includes("secret stack trace"));
+throws("incident forensics rejects invalid timestamps", () => analyzeRouteIncidents([valid], "not-a-time"), "generated_at");
+
 console.log("append-only ledger");
 const scratch = mkdtempSync(join(tmpdir(), "agentroute-"));
 const ledger = join(scratch, "routes.route.jsonl");
@@ -173,6 +186,10 @@ try {
   writeFileSync(cliScenarioConfig, JSON.stringify({ scenario_version: "0.1", id: "cli-outage", unavailable_providers: ["provider-a"] }));
   const cliScenario = execFileSync(process.execPath, ["--import", "tsx", cli, "scenario", ledger, "--scenario", cliScenarioConfig], { encoding: "utf8" });
   ok("CLI runs an offline resilience scenario", JSON.parse(cliScenario).stranded === 1);
+  const cliIncident = execFileSync(process.execPath, ["--import", "tsx", cli, "incident", "analyze", ledger], { encoding: "utf8" });
+  const cliIncidentHtml = join(scratch, "incident-review.html");
+  execFileSync(process.execPath, ["--import", "tsx", cli, "incident", "open", ledger, "-o", cliIncidentHtml], { encoding: "utf8" });
+  ok("CLI analyzes and renders incident evidence", JSON.parse(cliIncident).status === "clear" && readFileSync(cliIncidentHtml, "utf8").includes("No incident findings"));
   execFileSync(process.execPath, ["--import", "tsx", cli, "route", "validate", ledger], { encoding: "utf8" });
   ok("CLI validates a ledger", true);
   const cliDecision = join(scratch, "decision.json");

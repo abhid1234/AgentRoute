@@ -9,6 +9,7 @@ export * from "./drift.js";
 export * from "./evaluation.js";
 export * from "./experiment.js";
 export * from "./experiment-protocol.js";
+export * from "./incident.js";
 export * from "./openrouter-capture.js";
 export * from "./observatory.js";
 export * from "./policy-registry.js";

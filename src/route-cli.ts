@@ -11,6 +11,7 @@ import { decideReplayExperiment } from "./experiment-protocol.js";
 import { writeDecisionLab } from "./decision-lab.js";
 import { evaluateRoutingDrift } from "./drift.js";
 import type { RoutingDriftConfig } from "./drift.js";
+import { analyzeRouteIncidents, renderIncidentReport } from "./incident.js";
 import { captureOpenRouter } from "./openrouter-capture.js";
 import { startObservatory } from "./observatory.js";
 import { compilePolicy, diffPolicies, validatePolicy } from "./policy-registry.js";
@@ -99,6 +100,8 @@ const HELP = `AgentRoute — auditable model-routing receipts
   ar audit <routes.route.jsonl> [-o audit.json]
   ar drift <baseline.route.jsonl> <current.route.jsonl> --config drift.json [-o report.json]
   ar scenario <routes.route.jsonl> --scenario scenario.json [-o report.json]
+  ar incident analyze <routes.route.jsonl> [-o report.json]
+  ar incident open <routes.route.jsonl> -o incident-review.html [--force]
   ar lab <routes.route.jsonl> -o decision-lab.html
   ar arena <routes.route.jsonl> --tasks tasks.json --fixtures outcomes.json --max-requests N --max-cost-usd N [--ledger replay.route.jsonl] [-o report.json]
   ar serve <routes.route.jsonl> [--experiment-ledger replay.route.jsonl] [--host 127.0.0.1] [--port 4319] [--allow-remote]
@@ -313,6 +316,23 @@ export async function runRouteCli(args: string[]): Promise<void> {
     if (!input || !scenarioPath) throw new Error("usage: ar scenario <routes.route.jsonl> --scenario scenario.json [-o report.json]");
     emit(runRoutingScenario(loadRouteRecords(input), JSON.parse(readFileSync(scenarioPath, "utf8"))), option(rest, "-o", "--out"));
     return;
+  }
+
+  if (command === "incident") {
+    const [action, input] = rest;
+    if (action === "analyze" && input) {
+      emit(analyzeRouteIncidents(loadRouteRecords(input)), option(rest, "-o", "--out"));
+      return;
+    }
+    if (action === "open" && input) {
+      const output = option(rest, "-o", "--out");
+      if (!output) throw new Error("incident open requires -o <incident-review.html>");
+      if (existsSync(output) && !rest.includes("--force")) throw new Error(`${output} already exists; pass --force to replace it`);
+      writeFileSync(output, renderIncidentReport(analyzeRouteIncidents(loadRouteRecords(input))));
+      console.error(`wrote AgentRoute incident review -> ${output}`);
+      return;
+    }
+    throw new Error("usage: ar incident <analyze|open> <routes.route.jsonl> ...");
   }
 
   if (command === "lab") {
