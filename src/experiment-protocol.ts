@@ -18,6 +18,7 @@ export interface ExperimentProtocol {
   baseline_candidate_id: string;
   challenger_candidate_id: string;
   minimum_matched_pairs: number;
+  minimum_slice_matched_pairs?: number;
   quality_tie_tolerance?: number;
   thresholds: ExperimentProtocolThresholds;
   required_task_types?: string[];
@@ -62,6 +63,7 @@ export function validateExperimentProtocol(value: unknown): ExperimentProtocol {
   const challenger = candidateId(value.challenger_candidate_id, "challenger_candidate_id");
   if (baseline === challenger) throw new Error("experiment baseline and challenger must differ");
   if (!Number.isInteger(value.minimum_matched_pairs) || (value.minimum_matched_pairs as number) <= 0) throw new Error("minimum_matched_pairs must be a positive integer");
+  if (value.minimum_slice_matched_pairs !== undefined && (!Number.isInteger(value.minimum_slice_matched_pairs) || (value.minimum_slice_matched_pairs as number) <= 0)) throw new Error("minimum_slice_matched_pairs must be a positive integer");
   if (value.quality_tie_tolerance !== undefined && (!finite(value.quality_tie_tolerance) || value.quality_tie_tolerance < 0 || value.quality_tie_tolerance > 1)) throw new Error("quality_tie_tolerance must be 0..1");
   if (!object(value.thresholds)) throw new Error("experiment protocol thresholds are required");
   const thresholds = value.thresholds;
@@ -140,7 +142,8 @@ function scopeChecks(checks: ExperimentDecisionCheck[], scope: ExperimentDecisio
     return;
   }
   const comparison = comparisonFor(report);
-  addCheck(checks, { id: `${scope}:matched_pairs`, scope, kind: "coverage", metric: "matched_pairs", operator: "gte", threshold: protocol.minimum_matched_pairs, ...(comparison ? { actual: comparison.matched_pairs } : {}) }, `${prefix} matched pairs`);
+  const minimumPairs = scope === "global" ? protocol.minimum_matched_pairs : protocol.minimum_slice_matched_pairs ?? protocol.minimum_matched_pairs;
+  addCheck(checks, { id: `${scope}:matched_pairs`, scope, kind: "coverage", metric: "matched_pairs", operator: "gte", threshold: minimumPairs, ...(comparison ? { actual: comparison.matched_pairs } : {}) }, `${prefix} matched pairs`);
   const thresholds = protocol.thresholds;
   if (thresholds.minimum_mean_quality_delta !== undefined) addCheck(checks, { id: `${scope}:mean_quality_delta`, scope, kind: "threshold", metric: "mean_quality_delta", operator: "gte", threshold: thresholds.minimum_mean_quality_delta, ...(comparison?.mean_quality_delta !== undefined ? { actual: comparison.mean_quality_delta } : {}) }, `${prefix} challenger mean quality delta`);
   if (thresholds.minimum_quality_win_rate_95ci_low !== undefined) addCheck(checks, { id: `${scope}:quality_win_rate_95ci_low`, scope, kind: "threshold", metric: "quality_win_rate_95ci_low", operator: "gte", threshold: thresholds.minimum_quality_win_rate_95ci_low, ...(comparison?.challenger_quality_win_rate_95ci?.low !== undefined ? { actual: comparison.challenger_quality_win_rate_95ci.low } : {}) }, `${prefix} challenger quality win-rate 95% lower bound`);

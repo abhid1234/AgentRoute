@@ -9,9 +9,10 @@ import { evaluateRouteGate } from "./quality-gate.js";
 import type { RouteGateConfig } from "./quality-gate.js";
 import { fixtureReplayExecutor, runReplayArena } from "./replay-arena.js";
 import type { ReplayArenaTask, ReplayFixture } from "./replay-arena.js";
-import { foldRouteRecords, loadRouteRecords } from "./route.js";
+import { createRouteDecision, foldRouteRecords, loadRouteRecords } from "./route.js";
 import { routeToTelemetry } from "./route-to-otel.js";
 import type { TelemetryProfile } from "./route-to-otel.js";
+import type { RouteRecord } from "./route-types.js";
 
 export interface ProofArtifact {
   path: string;
@@ -46,17 +47,18 @@ const GENERATED_AT = "2026-08-25T00:00:00.000Z";
 const RUN_ID = "agentroute-public-proof-v0-2";
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-const INPUTS = [
-  ["input-route-ledger.jsonl", "examples/model-routing.route.jsonl"],
-  ["input-replay-tasks.json", "examples/evidence-suite.replay-tasks.json"],
-  ["input-replay-fixtures.json", "examples/evidence-suite.replay-fixtures.json"],
-  ["input-experiment-protocol.json", "examples/promotion-dossier.protocol.json"],
+const SOURCE_INPUTS = [
+  ["input-cases.json", "examples/public-proof.cases.json"],
+  ["input-experiment-protocol.json", "examples/public-proof.protocol.json"],
   ["input-candidate-policy.json", "examples/evidence-suite.policy.json"],
-  ["input-quality-gate.json", "examples/evidence-suite.gate.json"],
+  ["input-quality-gate.json", "examples/public-proof.gate.json"],
 ] as const;
 
 const ARTIFACT_FILES = [
-  ...INPUTS.map(([output]) => output),
+  ...SOURCE_INPUTS.map(([output]) => output),
+  "input-route-ledger.jsonl",
+  "input-replay-tasks.json",
+  "input-replay-fixtures.json",
   "inputs.json",
   "replay.route.jsonl",
   "arena-report.json",
@@ -111,41 +113,94 @@ function sourcePath(relative: string): string {
   return path;
 }
 
+interface PublicProofMetrics { quality: number; latency_ms: number; cost_usd: number }
+interface PublicProofCase { id: string; task_type: string; baseline: PublicProofMetrics; challenger: PublicProofMetrics }
+
+function validateMetrics(value: unknown, label: string): PublicProofMetrics {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} metrics are required`);
+  const metrics = value as Record<string, unknown>;
+  if (typeof metrics.quality !== "number" || !Number.isFinite(metrics.quality) || metrics.quality < 0 || metrics.quality > 1) throw new Error(`${label} quality must be 0..1`);
+  for (const key of ["latency_ms", "cost_usd"] as const) if (typeof metrics[key] !== "number" || !Number.isFinite(metrics[key]) || metrics[key] < 0) throw new Error(`${label} ${key} must be non-negative`);
+  return metrics as unknown as PublicProofMetrics;
+}
+
+function buildFrozenInputs(value: unknown): { records: RouteRecord[]; tasks: ReplayArenaTask[]; fixtures: ReplayFixture[] } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("public proof cases must be an object");
+  const input = value as Record<string, unknown>;
+  if (input.case_version !== "0.1" || input.evidence_label !== "illustrative" || !Array.isArray(input.cases) || input.cases.length < 10) throw new Error("public proof requires at least ten illustrative v0.1 cases");
+  const ids = new Set<string>();
+  const cases = input.cases.map((raw, index): PublicProofCase => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error(`public proof case ${index} must be an object`);
+    const item = raw as Record<string, unknown>;
+    if (typeof item.id !== "string" || !/^[a-z0-9][a-z0-9_]*$/.test(item.id) || ids.has(item.id)) throw new Error(`public proof case ${index} has an invalid or duplicate id`);
+    ids.add(item.id);
+    if (typeof item.task_type !== "string" || !/^[a-z][a-z0-9_]*$/.test(item.task_type)) throw new Error(`${item.id}: task_type is invalid`);
+    return { id: item.id, task_type: item.task_type, baseline: validateMetrics(item.baseline, `${item.id}.baseline`), challenger: validateMetrics(item.challenger, `${item.id}.challenger`) };
+  });
+  const records: RouteRecord[] = cases.map((item) => createRouteDecision({
+    route_id: `route_public_${item.id}`,
+    created_at: GENERATED_AT,
+    task: { type: item.task_type, fingerprint: `sha256:illustrative-${item.id}` },
+    router: { name: "agentroute-public-proof", version: "0.2.0", policy_id: "balanced-code-review", policy_version: "1.0.0" },
+    source: { kind: "native", fidelity: "full", event_id: RUN_ID },
+    candidates: [
+      { id: "deep-review", model: "frontier-review-model", provider: "provider-a", eligible: true, estimates: { ...item.baseline } },
+      { id: "fast-review", model: "fast-review-model", provider: "provider-b", eligible: true, estimates: { ...item.challenger } },
+    ],
+    criteria: { max_cost_usd: 0.1, max_latency_ms: 3000, min_quality: 0.8 },
+    selection: { candidate_id: "deep-review", reason: "illustrative frozen baseline selection" },
+  }));
+  const tasks: ReplayArenaTask[] = cases.map((item) => ({ route_id: `route_public_${item.id}`, task_ref: `task-pack://public-proof/${item.id}`, candidate_ids: ["deep-review", "fast-review"] }));
+  const fixtures: ReplayFixture[] = cases.flatMap((item) => ([
+    { route_id: `route_public_${item.id}`, candidate_id: "deep-review", estimated_cost_usd: item.baseline.cost_usd, outcome: { status: "success", ...item.baseline } },
+    { route_id: `route_public_${item.id}`, candidate_id: "fast-review", estimated_cost_usd: item.challenger.cost_usd, outcome: { status: "success", ...item.challenger } },
+  ]));
+  return { records, tasks, fixtures };
+}
+
+function candidateLedger(records: RouteRecord[], candidateId: string): RouteRecord[] {
+  const routeIds = new Set(records.flatMap((record) => record.record_type === "decision" && record.selection.candidate_id === candidateId ? [record.route_id] : []));
+  return records.filter((record) => routeIds.has(record.route_id));
+}
+
 export async function buildProofPack(options: BuildProofPackOptions): Promise<ProofManifest> {
   ensureOutputDirectory(options.output, options.force === true);
-  const sources = INPUTS.map(([output, source]) => {
+  const sources: Array<{ path: string; source: string; sha256: string }> = SOURCE_INPUTS.map(([output, source]) => {
     const content = readFileSync(sourcePath(source), "utf8");
     writeFileSync(join(options.output, output), content);
     return { path: output, source, sha256: sha256(content) };
   });
+  const frozen = buildFrozenInputs(readJson(join(options.output, "input-cases.json")));
+  writeFileSync(join(options.output, "input-route-ledger.jsonl"), frozen.records.map(canonicalJson).join("\n") + "\n");
+  writeCanonical(join(options.output, "input-replay-tasks.json"), { tasks: frozen.tasks });
+  writeCanonical(join(options.output, "input-replay-fixtures.json"), { fixtures: frozen.fixtures });
+  for (const path of ["input-route-ledger.jsonl", "input-replay-tasks.json", "input-replay-fixtures.json"]) sources.push({ path, source: "generated-from:input-cases.json", sha256: sha256(readFileSync(join(options.output, path), "utf8")) });
   writeCanonical(join(options.output, "inputs.json"), {
     proof_input_version: "0.1",
     claim_scope: "offline_conformance",
     evidence_label: "illustrative",
     generated_at: GENERATED_AT,
     run_id: RUN_ID,
-    limits: { max_requests: 2, max_cost_usd: 0.05 },
-    sources,
+    limits: { max_requests: 24, max_cost_usd: 1 },
+    sources: sources.sort((left, right) => left.path.localeCompare(right.path)),
   });
 
   const records = loadRouteRecords(join(options.output, "input-route-ledger.jsonl"));
-  const tasksValue = readJson(join(options.output, "input-replay-tasks.json")) as { tasks: ReplayArenaTask[] };
-  const fixturesValue = readJson(join(options.output, "input-replay-fixtures.json")) as { fixtures: ReplayFixture[] };
   const protocol = readJson(join(options.output, "input-experiment-protocol.json"));
   const policy = readJson(join(options.output, "input-candidate-policy.json"));
   const gateConfig = readJson(join(options.output, "input-quality-gate.json")) as RouteGateConfig;
   const arena = await runReplayArena(records, {
     run_id: RUN_ID,
     generated_at: GENERATED_AT,
-    tasks: tasksValue.tasks,
-    limits: { max_requests: 2, max_cost_usd: 0.05 },
-    executor: fixtureReplayExecutor(fixturesValue.fixtures),
+    tasks: frozen.tasks,
+    limits: { max_requests: 24, max_cost_usd: 1 },
+    executor: fixtureReplayExecutor(frozen.fixtures),
   });
   writeFileSync(join(options.output, "replay.route.jsonl"), arena.records.map(canonicalJson).join("\n") + "\n");
   writeCanonical(join(options.output, "arena-report.json"), arena);
 
   const decision = decideReplayExperiment(arena.records, protocol, GENERATED_AT);
-  const gate = evaluateRouteGate(records, records, gateConfig);
+  const gate = evaluateRouteGate(candidateLedger(arena.records, "deep-review"), candidateLedger(arena.records, "fast-review"), gateConfig);
   const dossier = createPromotionDossier({
     protocol,
     decision,

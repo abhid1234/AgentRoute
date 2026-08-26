@@ -1,0 +1,11 @@
+{
+  "minimum_samples": 12,
+  "minimum_slice_samples": 3,
+  "minimum_observation_coverage": 1,
+  "maximum_cost_increase_percent": 0,
+  "maximum_latency_increase_percent": 0,
+  "minimum_quality_delta": -0.02,
+  "maximum_policy_violations": 0,
+  "insufficient_evidence": "fail",
+  "task_type_slices": true
+}

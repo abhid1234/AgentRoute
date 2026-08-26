@@ -18,7 +18,7 @@ node dist/cli.js proof verify local/proof-pack
 
 Then open `local/proof-pack/index.html` in a browser.
 
-The bundled results are **illustrative offline conformance evidence**, not a
+The bundled twelve-case, four-slice results are **illustrative offline conformance evidence**, not a
 live benchmark or provider-performance claim. The pack binds frozen inputs,
 replay receipts, a preregistered experiment decision, quality gate, promotion
 dossier, evidence capsule, and two metadata-only telemetry exports.

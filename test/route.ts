@@ -714,6 +714,8 @@ const governanceGateConfig = JSON.parse(readFileSync(join(root, "examples/experi
 ok("experiment governance gate example enables fail-closed task slices", governanceGateConfig.task_type_slices === true && evaluateRouteGate(sliceBaseline, sliceCurrent, governanceGateConfig).slices?.code_review.status === "fail");
 const promotionProtocolExample = JSON.parse(readFileSync(join(root, "examples/promotion-dossier.protocol.json"), "utf8"));
 ok("promotion dossier protocol example is preregistered and valid", validateExperimentProtocol(promotionProtocolExample).challenger_candidate_id === "fast-review");
+throws("experiment protocols reject non-positive per-slice coverage", () => validateExperimentProtocol({ ...promotionProtocolExample, minimum_slice_matched_pairs: 0 }), "minimum_slice_matched_pairs");
+throws("quality gates reject fractional per-slice sample requirements", () => evaluateRouteGate([valid], [valid], { minimum_slice_samples: 1.5 }), "minimum_slice_samples must be an integer");
 const importFixtures = {
   portkey: importPortkeyRoute(JSON.parse(readFileSync(join(root, "examples/imports/portkey-log.json"), "utf8")), { routeId: "route_fixture_portkey" }),
   vercel: fromVercelAiGatewayRoute(JSON.parse(readFileSync(join(root, "examples/imports/vercel-ai-gateway-event.json"), "utf8")), { routeId: "route_fixture_vercel" }),
@@ -761,6 +763,10 @@ try {
   const secondManifest = await buildProofPack({ output: second });
   const firstVerification = verifyProofPack(first);
   ok("proof pack binds an eligible offline evidence chain", firstVerification.valid && firstVerification.dossier_verdict === "eligible" && firstManifest.claim_scope === "offline_conformance");
+  const proofDecision = JSON.parse(readFileSync(join(first, "experiment-decision.json"), "utf8"));
+  const proofGate = JSON.parse(readFileSync(join(first, "quality-gate.json"), "utf8"));
+  ok("proof pack evaluates twelve matched cases across four required slices", proofDecision.analysis.comparisons[0].matched_pairs === 12 && Object.keys(proofDecision.analysis.by_task_type).length === 4);
+  ok("proof quality gate compares complete candidate ledgers by task slice", proofGate.baseline_samples === 12 && proofGate.current_samples === 12 && Object.keys(proofGate.slices).length === 4 && Object.values(proofGate.slices).every((slice) => (slice as { status: string }).status === "pass"));
   const firstFiles = readdirSync(first).sort();
   const secondFiles = readdirSync(second).sort();
   ok("clean proof runs emit the same file set", JSON.stringify(firstFiles) === JSON.stringify(secondFiles));

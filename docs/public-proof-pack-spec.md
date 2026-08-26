@@ -36,7 +36,8 @@ runs produce byte-identical machine-readable artifacts.
 
 ## Evidence boundary
 
-The default proof pack is deterministic and offline. Fixture scores demonstrate
+The default proof pack is deterministic and offline. It contains twelve frozen
+cases across code review, research, security, and summarization. Fixture scores demonstrate
 the mechanics of replay, experiment analysis, gates, and promotion review. They
 must be labelled `offline_conformance` and `illustrative` everywhere a reader
 could confuse them with a live benchmark.
@@ -88,6 +89,10 @@ deploy an application, call a live model, or promote a routing policy.
 
 - Two clean proof runs are byte-identical for all JSON, JSONL, and capsule
   artifacts.
+- The bundled corpus contains at least ten matched cases and the quality gate
+  compares baseline-candidate receipts with challenger-candidate receipts.
+- Global and per-slice sample requirements are declared separately so slice
+  coverage cannot accidentally inherit an impossible global threshold.
 - `proof verify <directory>` recomputes every digest and every embedded
   verification result, failing closed on addition, removal, or modification of
   a bound artifact.

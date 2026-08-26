@@ -1,0 +1,18 @@
+{
+  "protocol_version": "0.1",
+  "id": "public-proof-fast-review",
+  "description": "Illustrative offline criteria for a faster review candidate across four task slices.",
+  "baseline_candidate_id": "deep-review",
+  "challenger_candidate_id": "fast-review",
+  "minimum_matched_pairs": 12,
+  "minimum_slice_matched_pairs": 3,
+  "quality_tie_tolerance": 0.005,
+  "thresholds": {
+    "minimum_mean_quality_delta": -0.02,
+    "minimum_quality_win_rate_95ci_low": 0,
+    "maximum_mean_latency_delta_ms": 0,
+    "maximum_mean_cost_delta_usd": 0,
+    "minimum_success_rate_delta": 0
+  },
+  "required_task_types": ["code_review", "research", "security", "summarization"]
+}

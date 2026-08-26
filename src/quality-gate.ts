@@ -3,6 +3,7 @@ import { foldRouteRecords, policyViolations } from "./route.js";
 
 export interface RouteGateConfig {
   minimum_samples?: number;
+  minimum_slice_samples?: number;
   minimum_observation_coverage?: number;
   maximum_cost_increase_percent?: number;
   maximum_latency_increase_percent?: number;
@@ -65,9 +66,10 @@ function aggregates(records: RouteRecord[], taskType?: string): Aggregates {
 }
 
 function validateConfig(config: RouteGateConfig): void {
-  const nonNegative = ["minimum_samples", "maximum_cost_increase_percent", "maximum_latency_increase_percent", "maximum_policy_violations"] as const;
+  const nonNegative = ["minimum_samples", "minimum_slice_samples", "maximum_cost_increase_percent", "maximum_latency_increase_percent", "maximum_policy_violations"] as const;
   for (const key of nonNegative) if (config[key] !== undefined && (!Number.isFinite(config[key]) || config[key]! < 0)) throw new Error(`${key} must be non-negative`);
   if (config.minimum_samples !== undefined && !Number.isInteger(config.minimum_samples)) throw new Error("minimum_samples must be an integer");
+  if (config.minimum_slice_samples !== undefined && !Number.isInteger(config.minimum_slice_samples)) throw new Error("minimum_slice_samples must be an integer");
   if (config.minimum_observation_coverage !== undefined && (!Number.isFinite(config.minimum_observation_coverage) || config.minimum_observation_coverage < 0 || config.minimum_observation_coverage > 1)) throw new Error("minimum_observation_coverage is invalid");
   if (config.minimum_quality_delta !== undefined && (!Number.isFinite(config.minimum_quality_delta) || config.minimum_quality_delta < -1 || config.minimum_quality_delta > 1)) throw new Error("minimum_quality_delta must be -1..1");
   if (config.insufficient_evidence && !["fail", "neutral"].includes(config.insufficient_evidence)) throw new Error("insufficient_evidence must be fail or neutral");
@@ -79,7 +81,7 @@ function gateMetrics(baseline: Aggregates, current: Aggregates, config: RouteGat
   const insufficientStatus = config.insufficient_evidence === "neutral" ? "neutral" : "fail";
   const decorate = (metric: RouteGateMetric): RouteGateMetric => slice ? { ...metric, slice } : metric;
   const addEvidence = (id: string, message: string): void => { metrics.push(decorate({ id, status: insufficientStatus, message })); };
-  const requiredSamples = config.minimum_samples ?? 1;
+  const requiredSamples = slice ? config.minimum_slice_samples ?? config.minimum_samples ?? 1 : config.minimum_samples ?? 1;
   const sampleMetric = (id: string, label: string, samples: number): void => {
     if (samples < requiredSamples) metrics.push(decorate({ id, status: insufficientStatus, message: `${label} has ${samples} measured samples; ${requiredSamples} required`, current: samples, threshold: requiredSamples }));
     else metrics.push(decorate({ id, status: "pass", message: `${label} has ${samples} measured samples; ${requiredSamples} required`, current: samples, threshold: requiredSamples }));
