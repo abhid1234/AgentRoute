@@ -45,7 +45,9 @@ import { compilePolicy, diffPolicies, validatePolicyRegistry } from "../src/poli
 import { addPolicyToRegistry, initializePolicyRegistry, loadPolicyRegistry, transitionPolicyInRegistry } from "../src/policy-store.js";
 import { createPromotionDossier, renderPromotionDossier, verifyPromotionDossier } from "../src/promotion-dossier.js";
 import { buildProofPack, verifyProofPack } from "../src/proof-pack.js";
+import { compareProofPacks, formatGitHubProofDiff } from "../src/proof-diff.js";
 import { signProofPack, verifyProofAttestation, writeProofAttestation } from "../src/proof-attestation.js";
+import { canonicalJson, sha256 } from "../src/canonical.js";
 import { evaluateRouteGate, formatGitHubGate, validateRouteGateResult } from "../src/quality-gate.js";
 import { appendReliabilityReview, appendReliabilityTimeline, createReliabilityTimeline, initializeReliabilityTimeline, loadReliabilityTimeline, renderReliabilityTimeline, verifyReliabilityTimeline } from "../src/reliability-timeline.js";
 import { fixtureReplayExecutor, runReplayArena } from "../src/replay-arena.js";
@@ -939,9 +941,13 @@ const proofScratch = mkdtempSync(join(tmpdir(), "agentroute-proof-"));
 try {
   const first = join(proofScratch, "first");
   const second = join(proofScratch, "second");
+  const changed = join(proofScratch, "changed");
+  const membership = join(proofScratch, "membership");
   const malicious = join(proofScratch, "malicious");
   const firstManifest = await buildProofPack({ output: first });
   const secondManifest = await buildProofPack({ output: second });
+  await buildProofPack({ output: changed });
+  await buildProofPack({ output: membership });
   await buildProofPack({ output: malicious });
   const firstVerification = verifyProofPack(first);
   ok("proof pack binds an eligible offline evidence chain", firstVerification.valid && firstVerification.dossier_verdict === "eligible" && firstManifest.claim_scope === "offline_conformance");
@@ -961,6 +967,34 @@ try {
   const secondFiles = readdirSync(second).sort();
   ok("clean proof runs emit the same file set", JSON.stringify(firstFiles) === JSON.stringify(secondFiles));
   ok("clean proof runs are byte-identical", firstFiles.every((file) => readFileSync(join(first, file), "utf8") === readFileSync(join(second, file), "utf8")));
+  const unchangedDiff = compareProofPacks(first, second);
+  ok("proof diff recognizes byte-identical verified packs", unchangedDiff.status === "unchanged" && unchangedDiff.artifacts.added.length === 0 && unchangedDiff.artifacts.removed.length === 0 && unchangedDiff.artifacts.modified.length === 0 && unchangedDiff.semantics.length === 0);
+  const changedReport = readFileSync(join(changed, "index.html"), "utf8").replace("</body>", "<!-- reviewer-copy-change --></body>");
+  writeFileSync(join(changed, "index.html"), changedReport);
+  const changedManifest = JSON.parse(readFileSync(join(changed, "proof-manifest.json"), "utf8"));
+  changedManifest.artifacts.find((artifact: { path: string }) => artifact.path === "index.html").sha256 = sha256(changedReport);
+  const { root_sha256: ignoredChangedRoot, ...changedManifestBody } = changedManifest;
+  void ignoredChangedRoot;
+  changedManifest.root_sha256 = sha256(changedManifestBody);
+  writeFileSync(join(changed, "proof-manifest.json"), canonicalJson(changedManifest) + "\n");
+  const changedDiff = compareProofPacks(first, changed);
+  const serializedChangedDiff = JSON.stringify(changedDiff);
+  ok("proof diff reports the exact re-bound artifact change", changedDiff.status === "changed" && changedDiff.artifacts.modified.length === 1 && changedDiff.artifacts.modified[0].path === "index.html");
+  ok("proof diff excludes artifact bodies and caller paths", !serializedChangedDiff.includes("reviewer-copy-change") && !serializedChangedDiff.includes(proofScratch));
+  const unchangedGitHub = formatGitHubProofDiff(unchangedDiff);
+  const changedGitHub = formatGitHubProofDiff(changedDiff);
+  ok("proof diff emits bounded GitHub annotations", unchangedGitHub.startsWith("::notice::") && changedGitHub.startsWith("::warning::") && changedGitHub.includes("Modified proof artifact: index.html") && !changedGitHub.includes("reviewer-copy-change") && !changedGitHub.includes(proofScratch));
+  const membershipNote = "{\"scope\":\"unexpected\"}\n";
+  writeFileSync(join(membership, "review-note.json"), membershipNote);
+  const membershipManifest = JSON.parse(readFileSync(join(membership, "proof-manifest.json"), "utf8"));
+  membershipManifest.artifacts.push({ path: "review-note.json", media_type: "application/json", sha256: sha256(membershipNote) });
+  const { root_sha256: ignoredMembershipRoot, ...membershipManifestBody } = membershipManifest;
+  void ignoredMembershipRoot;
+  membershipManifest.root_sha256 = sha256(membershipManifestBody);
+  writeFileSync(join(membership, "proof-manifest.json"), canonicalJson(membershipManifest) + "\n");
+  const membershipVerification = verifyProofPack(membership);
+  ok("proof verification rejects a re-bound v0.1 membership expansion", !membershipVerification.valid && membershipVerification.errors.some((error) => error.includes("required v0.1 artifact set")));
+  throws("proof diff rejects an invalid pack before comparison", () => compareProofPacks(first, membership), "current proof pack is invalid");
   const proofKeys = generateKeyPairSync("ed25519");
   const proofPrivateKey = proofKeys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
   const proofPublicKey = proofKeys.publicKey.export({ type: "spki", format: "pem" }).toString();
@@ -1022,6 +1056,18 @@ try {
   const cli = join(root, "src/cli.ts");
   const cliResult = JSON.parse(execFileSync(process.execPath, ["--import", "tsx", cli, "proof", "run", "--out", cliProof], { encoding: "utf8" }));
   ok("CLI builds and verifies the complete proof pack in one command", cliResult.artifact_count === firstManifest.artifacts.length && verifyProofPack(cliProof).valid);
+  const cliUnchangedDiff = JSON.parse(execFileSync(process.execPath, ["--import", "tsx", cli, "proof", "diff", cliProof, cliProof], { encoding: "utf8" }));
+  const cliChangedGitHub = execFileSync(process.execPath, ["--import", "tsx", cli, "proof", "diff", cliProof, changed, "--format", "github"], { encoding: "utf8" });
+  ok("CLI compares verified proof packs in JSON and GitHub formats", cliUnchangedDiff.status === "unchanged" && cliChangedGitHub.includes("::warning::AgentRoute proof changed") && cliChangedGitHub.includes("index.html"));
+  let failOnChangeOutput = "";
+  try {
+    execFileSync(process.execPath, ["--import", "tsx", cli, "proof", "diff", cliProof, changed, "--fail-on-change"], { encoding: "utf8" });
+  } catch (error) {
+    failOnChangeOutput = String((error as { stdout?: string }).stdout ?? "");
+  }
+  ok("CLI fail-on-change emits the complete diff before exiting non-zero", JSON.parse(failOnChangeOutput).status === "changed" && JSON.parse(failOnChangeOutput).artifacts.modified[0].path === "index.html");
+  throws("CLI rejects incompatible proof diff output options", () => execFileSync(process.execPath, ["--import", "tsx", cli, "proof", "diff", cliProof, changed, "--format", "github", "-o", join(proofScratch, "diff.txt")], { encoding: "utf8" }), "does not support -o");
+  throws("CLI rejects unknown proof diff formats", () => execFileSync(process.execPath, ["--import", "tsx", cli, "proof", "diff", cliProof, changed, "--format", "html"], { encoding: "utf8" }), "must be json or github");
   const proofPrivateKeyPath = join(proofScratch, "proof-private.pem");
   const proofPublicKeyPath = join(proofScratch, "proof-public.pem");
   const proofAttestationPath = join(proofScratch, "proof.arsig");

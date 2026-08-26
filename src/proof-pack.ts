@@ -366,6 +366,7 @@ export function verifyProofPack(path: string): ProofVerification {
   if (manifest.root_sha256 !== manifestRoot(body)) errors.push("proof manifest root SHA-256 mismatch");
   const actualFiles = readdirSync(path).sort();
   const declaredFiles = [...paths, "proof-manifest.json"].sort();
+  if (canonicalJson(declaredFiles) !== canonicalJson([...EXPECTED_FILES].sort())) errors.push("proof manifest does not declare the required v0.1 artifact set");
   if (canonicalJson(actualFiles) !== canonicalJson(declaredFiles)) errors.push("proof pack files do not exactly match the manifest");
   for (const artifact of artifacts) {
     if (!SAFE_ARTIFACT_PATH.test(artifact.path)) continue;

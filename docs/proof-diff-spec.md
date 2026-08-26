@@ -50,7 +50,9 @@ The JSON result is deterministic and contains:
 - `status: "unchanged" | "changed"`;
 - baseline and current summaries with root, artifact count, generator version,
   claim scope, evidence label, and bounded semantic statuses;
-- lexicographically sorted `added`, `removed`, and `modified` artifact entries;
+- lexicographically sorted `added`, `removed`, and `modified` artifact entries
+  (the current v0.1 proof contract has fixed membership, so only `modified` can
+  be non-empty until another proof version is supported);
 - each modified entry's baseline and current SHA-256 values; and
 - lexicographically sorted semantic changes for dossier verdict, operations
   status, timeline status, and connector count.
@@ -85,8 +87,8 @@ verification diagnostics but must not include artifact contents.
   change arrays.
 - A valid pack with a re-bound artifact change returns `changed`, the exact
   modified artifact, and no artifact contents.
-- Added and removed manifest artifacts are reported when both packs still
-  satisfy the proof contract for their declared versions.
+- The v0.1 verifier rejects a manifest that adds or removes a required
+  artifact, even when its root and file set have been re-bound.
 - An invalid or tampered pack is rejected before comparison.
 - `--fail-on-change` emits the complete diff before exiting non-zero.
 - JSON and GitHub output contain neither caller directory paths nor privacy

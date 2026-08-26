@@ -20,6 +20,7 @@ import type { PolicyTarget } from "./policy-registry.js";
 import { addPolicyToRegistry, initializePolicyRegistry, loadPolicyRegistry, transitionPolicyInRegistry } from "./policy-store.js";
 import { createPromotionDossier, loadPromotionDossier, renderPromotionDossier, verifyPromotionDossier, writePromotionDossier } from "./promotion-dossier.js";
 import { buildProofPack, verifyProofPack } from "./proof-pack.js";
+import { compareProofPacks, formatGitHubProofDiff } from "./proof-diff.js";
 import { signProofPack, verifyProofAttestation, writeProofAttestation } from "./proof-attestation.js";
 import type { PolicyStatus } from "./policy-registry.js";
 import { evaluateRouteGate, formatGitHubGate } from "./quality-gate.js";
@@ -133,6 +134,7 @@ const HELP = `AgentRoute — auditable model-routing receipts
   ar proof run --out proof-pack [--force]
   ar proof sign <proof-pack> --private-key private.pem -o proof.arsig
   ar proof verify <proof-pack> [--attestation proof.arsig] [--public-key public.pem]
+  ar proof diff <baseline-pack> <current-pack> [--format json|github] [--fail-on-change] [-o diff.json]
   ar capsule create <routes.route.jsonl> -o evidence.arcap [--policy policy.json]
   ar capsule verify <evidence.arcap> [--require-signature] [--public-key public.pem]
   ar capsule sign <evidence.arcap> --private-key private.pem -o signed.arcap
@@ -646,7 +648,7 @@ export async function runRouteCli(args: string[]): Promise<void> {
   }
 
   if (command === "proof") {
-    const [action, input] = rest;
+    const [action, input, second] = rest;
     if (action === "run") {
       const output = option(rest, "--out", "-o");
       if (!output) throw new Error("proof run requires --out <proof-pack-directory>");
@@ -677,7 +679,18 @@ export async function runRouteCli(args: string[]): Promise<void> {
       if (!verification.valid) throw new Error("AgentRoute proof pack verification failed");
       return;
     }
-    throw new Error("usage: ar proof <run|sign|verify> ...");
+    if (action === "diff" && input && second) {
+      const format = option(rest, "--format") ?? "json";
+      if (format !== "json" && format !== "github") throw new Error("proof diff --format must be json or github");
+      const output = option(rest, "--out", "-o");
+      if (format === "github" && output) throw new Error("proof diff --format github does not support -o");
+      const diff = compareProofPacks(input, second);
+      if (format === "github") emitText(formatGitHubProofDiff(diff));
+      else emit(diff, output);
+      if (rest.includes("--fail-on-change") && diff.status === "changed") throw new Error("AgentRoute verified proof changed");
+      return;
+    }
+    throw new Error("usage: ar proof <run|sign|verify|diff> ...");
   }
 
   if (command === "connectors") {
