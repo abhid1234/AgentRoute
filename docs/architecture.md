@@ -21,6 +21,7 @@ flowchart TB
   SLO --> OPS
   SCENARIO --> OPS
   INCIDENT --> OPS
+  OPS --> HISTORY[Hash-chained reliability timeline]
   LEDGER --> ARENA[Shadow Replay Arena]
   ARENA -->|measured candidate receipts| LEDGER
   PROTOCOL[Preregistered experiment protocol] --> EXPERIMENT[Paired experiment decision]
@@ -145,6 +146,11 @@ explain exactly what evidence is missing and which analysis is disabled.
   and a derived clear, attention, insufficient, or critical assessment. The
   `.arops` payload is hash-verified when reopened, and its standalone HTML is a
   local review surface rather than an alerting or deployment mechanism.
+- **Reliability timelines** append verified `.arops` reviews in strict timestamp
+  order, hash-chain every entry, and recompute operational status counts,
+  consecutive failures, error-budget events, metric deltas, and recovery or
+  regression signals. Atomic `.arhistory` persistence and standalone HTML make
+  the trend reviewable without turning AgentRoute into an alerting service.
 
 These workflows remain read-only. None calls a vendor, mutates a ledger, applies
 a compiled policy, or treats missing evidence as a successful measurement.

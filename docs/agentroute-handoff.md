@@ -1,7 +1,6 @@
 # AgentRoute handoff for UI and launch work
 
-Status: local implementation candidate on `codex/agentroute`; not published or
-deployed.
+Status: release-prepared local implementation stack; not published or deployed.
 
 ## Product sentence
 
@@ -18,6 +17,10 @@ different policy would have scored the same known candidate set.
   marks incomplete evidence as skipped.
 - `ot route to-otel` produces OTLP/JSON without task descriptions, endpoints,
   prompts, extensions, or source envelopes.
+- `ar ops create|verify|open` produces a point-in-time, tamper-evident routing
+  operations review over sanitized evidence.
+- `ar history create|append|verify|open` produces an append-only reliability
+  timeline with deterministic trend signals and standalone HTML.
 - `examples/model-routing.route.jsonl` is the sanitized demo fixture.
 
 The UI can remain a static file reader like the OpenTrajectory Inspector. It

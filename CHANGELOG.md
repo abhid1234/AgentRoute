@@ -29,6 +29,9 @@ released; entries below describe the intended first public release line.
   task slices, nearest-rank tail metrics, and error-budget accounting.
 - Tamper-evident `.arops` operations reviews that bind sanitized ledgers to
   recomputed drift, SLO, incident, and resilience evidence plus standalone HTML.
+- Append-only `.arhistory` reliability timelines with strict chronology,
+  per-entry hash chaining, atomic writes, operational trend signals, metric
+  deltas that preserve missingness, and standalone HTML review.
 - Collision-free npm package candidate `agentroute-evidence`; the AgentRoute
   project name and `ar` binary remain unchanged.
 

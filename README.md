@@ -56,6 +56,14 @@ node dist/cli.js ops create examples/can-auto-routing-prove-it.route.jsonl \
 node dist/cli.js ops verify local/operations.arops
 node dist/cli.js ops open local/operations.arops \
   -o local/operations-review.html
+node dist/cli.js history create local/operations.arops \
+  -o local/reliability.arhistory
+# After creating the next period's verified operations review:
+node dist/cli.js history append local/reliability.arhistory \
+  local/operations-next.arops
+node dist/cli.js history verify local/reliability.arhistory
+node dist/cli.js history open local/reliability.arhistory \
+  -o local/reliability.html
 node dist/cli.js lab examples/can-auto-routing-prove-it.route.jsonl -o local/decision-lab.html
 node dist/cli.js connectors
 node dist/cli.js connectors --status partial --json
@@ -190,6 +198,9 @@ const report = replayRoutes(observation ? [decision, observation] : [decision]);
 - Tamper-evident `.arops` review bundles that bind sanitized baseline and current
   evidence to recomputed drift, SLO, incident, and resilience results in one
   portable JSON artifact and standalone HTML review.
+- Append-only `.arhistory` reliability timelines with verified operations-review
+  inputs, per-entry hash chaining, atomic persistence, regression and recovery
+  signals, error-budget trends, and a standalone longitudinal dashboard.
 - Examples, adversarial behavioral tests, and a conformance corpus.
 
 The format and UX constraints are documented in [`docs/agentroute-spec.md`](docs/agentroute-spec.md). The handoff records the stable surfaces and verification boundary.
@@ -214,6 +225,8 @@ Operational drift, resilience, and incident contracts are documented in
 [`docs/operations-intelligence-spec.md`](docs/operations-intelligence-spec.md).
 Routing SLOs and portable operations-review bundles are documented in
 [`docs/slo-operations-review-spec.md`](docs/slo-operations-review-spec.md).
+Hash-chained longitudinal reliability review is documented in
+[`docs/reliability-timeline-spec.md`](docs/reliability-timeline-spec.md).
 
 The first end-to-end demo kit is documented in
 [`docs/can-auto-routing-prove-it.md`](docs/can-auto-routing-prove-it.md). Its

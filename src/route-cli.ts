@@ -106,7 +106,7 @@ const HELP = `AgentRoute — auditable model-routing receipts
   ar incident analyze <routes.route.jsonl> [-o report.json]
   ar incident open <routes.route.jsonl> -o incident-review.html [--force]
   ar slo evaluate <routes.route.jsonl> --config slo.json [-o report.json]
-  ar ops create <current.route.jsonl> --baseline baseline.route.jsonl --drift drift.json --slo slo.json [--scenario scenario.json] -o review.arops
+  ar ops create <current.route.jsonl> --baseline baseline.route.jsonl --drift drift.json --slo slo.json [--scenario scenario.json] [--created-at RFC3339] -o review.arops
   ar ops verify <review.arops>
   ar ops open <review.arops> -o review.html
   ar history create <review.arops> -o reliability.arhistory
