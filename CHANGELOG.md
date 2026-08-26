@@ -18,6 +18,9 @@ released; entries below describe the intended first public release line.
   promotion, operations, outage-resilience, connector, and longitudinal
   reliability evidence; three standalone HTML review surfaces; and fail-closed
   verification.
+- Detached Ed25519 proof-pack attestations with strict subject binding,
+  invalid-pack refusal, deterministic signatures, and explicit separation of
+  embedded-key validity from caller-pinned signer trust.
 - OpenTelemetry GenAI and OpenInference export profiles.
 - Connector SDK conformance contract and native reference adapter.
 - Explicit offline-versus-user-supplied evidence provenance on Replay Arena

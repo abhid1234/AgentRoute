@@ -24,6 +24,8 @@ different policy would have scored the same known candidate set.
 - `ar proof run|verify` produces the deterministic 31-artifact launch showcase,
   connecting experiment, promotion, operations, resilience, connector, and
   reliability evidence without accounts or network calls.
+- `ar proof sign` creates a detached Ed25519 attestation only after the full
+  pack verifies; `ar proof verify --attestation --public-key` pins signer trust.
 - `examples/model-routing.route.jsonl` is the sanitized demo fixture.
 
 The UI can remain a static file reader like the OpenTrajectory Inspector. It

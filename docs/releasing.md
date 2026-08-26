@@ -25,7 +25,10 @@ policies.
    `.arops` operations-review, and `.arhistory` reliability-timeline workflows.
    Verify the portable artifacts and standalone HTML retain no prompt, response,
    endpoint, error, or credential.
-8. In the reviewed release commit only, remove `private: true` or set it to
+8. If a release signing key is already governed outside the repository, create
+   a detached `.arsig` for the verified proof pack and trust-verify it with the
+   separately distributed public key. Never commit or upload the private key.
+9. In the reviewed release commit only, remove `private: true` or set it to
    `false`. This is an explicit publication gate, not routine development.
 
 ## Prepare without publishing

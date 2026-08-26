@@ -44,7 +44,8 @@ The signature message is domain-separated from evidence-capsule signatures and
 binds the canonical subject:
 
 ```text
-AgentRoute proof attestation 0.1\n<canonical subject JSON>
+AgentRoute proof attestation 0.1
+<canonical subject JSON>
 ```
 
 Unknown fields, unsupported versions or algorithms, malformed hashes, invalid

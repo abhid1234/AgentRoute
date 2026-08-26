@@ -38,6 +38,11 @@ review, reliability timeline, telemetry exports, connector catalog, and their
 verification results. It explains why an experiment may be eligible while an
 outage scenario still deserves operational attention.
 
+After verification, a maintainer may create a detached Ed25519 attestation for
+the exact proof-manifest root. Signing is optional and never changes the proof
+directory; its contract and trust boundary are defined in
+[`proof-attestation-spec.md`](proof-attestation-spec.md).
+
 ## Frozen operational evidence
 
 Operational ledgers are derived only from `public-proof.cases.json`:

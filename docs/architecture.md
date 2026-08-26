@@ -181,6 +181,9 @@ flowchart LR
   HISTORY --> MANIFEST
   MANIFEST --> REPORT[Standalone HTML report]
   MANIFEST --> VERIFY[Fail-closed proof verification]
+  VERIFY --> SIGN[Detached Ed25519 attestation]
+  PUBKEY[Caller-pinned public key] --> TRUST[Trusted signer verification]
+  SIGN --> TRUST
   VERIFY --> PACK[npm package allowlist]
   PACK --> SUPPLY[SBOM and artifact attestations]
   SUPPLY --> APPROVAL[Protected human release approval]
@@ -196,3 +199,9 @@ separately with user-supplied executors and labelled provenance. The release
 workflow prepares a tarball, CycloneDX SBOM, and attestations; npm publication
 requires both removal of the package's private guard and approval in the
 protected `npm-publish` environment.
+
+The detached `.arsig` path adds authorship without changing the proof pack or
+its manifest. Verification always revalidates the complete pack before checking
+the signature. The embedded public key can establish cryptographic validity;
+only a caller-pinned public key establishes trust for that verification run,
+and neither result proves a real-world identity by itself.

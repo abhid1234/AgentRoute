@@ -90,6 +90,11 @@ and an SBOM for release artifacts.
 No workflow in this milestone may publish from a pull request, expose a token,
 deploy an application, call a live model, or promote a routing policy.
 
+Optional proof authorship uses the detached contract in
+[`proof-attestation-spec.md`](proof-attestation-spec.md). It preserves the exact
+pack membership and does not turn an embedded public key into an identity
+claim.
+
 ## Acceptance criteria
 
 - Two clean proof runs are byte-identical for all JSON, JSONL, and capsule

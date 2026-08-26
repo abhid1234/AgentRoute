@@ -23,3 +23,8 @@ traffic, apply compiled policies, or make deployment changes. Portable exports
 are metadata-only by design, but users must still inspect source logs before
 importing them and protect local ledgers as potentially sensitive operational
 records.
+
+Detached proof attestations embed only a public key. A valid signature proves
+possession of the matching private key, not the signer's identity; pin and
+distribute trusted public keys through a separate authenticated channel. Never
+store release private keys in this repository or pass them through logs.

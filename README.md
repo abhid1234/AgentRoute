@@ -18,6 +18,22 @@ node dist/cli.js proof verify local/proof-pack
 
 Then open `local/proof-pack/index.html` in a browser.
 
+Optionally sign the exact verified root with an existing Ed25519 key and pin the
+expected public key during verification:
+
+```bash
+node dist/cli.js proof sign local/proof-pack \
+  --private-key release-private.pem \
+  -o local/proof-pack.arsig
+node dist/cli.js proof verify local/proof-pack \
+  --attestation local/proof-pack.arsig \
+  --public-key release-public.pem
+```
+
+The signature is detached, so the deterministic proof directory remains
+unchanged. Without a pinned public key, AgentRoute reports a cryptographically
+valid signature as untrusted rather than inferring signer identity.
+
 The bundled twelve-case, four-slice results are **illustrative offline
 conformance evidence**, not a live benchmark or provider-performance claim.
 The 31-artifact showcase connects frozen inputs, replay receipts, a
@@ -193,6 +209,9 @@ const report = replayRoutes(observation ? [decision, observation] : [decision]);
   links experiment, promotion, operations, resilience, connectors, and
   longitudinal reliability, and renders three standalone limitation-labelled
   HTML review surfaces.
+- Detached Ed25519 proof attestations that refuse invalid packs, preserve
+  deterministic proof contents, and distinguish signature validity from trust
+  in a caller-pinned public key.
 - Routing drift intelligence that measures model/provider selection movement,
   outcome regression, and task-type slices against preregistered thresholds.
 - Offline resilience scenarios for provider/model outages and scoped cost or
@@ -225,6 +244,8 @@ The reproducible public demonstration contract is documented in
 [`docs/public-proof-pack-spec.md`](docs/public-proof-pack-spec.md).
 The connected launch-day walkthrough and its exact truth constraints are
 documented in [`docs/launch-showcase-spec.md`](docs/launch-showcase-spec.md).
+Detached proof authorship and trust semantics are documented in
+[`docs/proof-attestation-spec.md`](docs/proof-attestation-spec.md).
 Third-party adapter authors should start with
 [`docs/connector-sdk.md`](docs/connector-sdk.md), and telemetry mappings are
 documented in [`docs/interoperability.md`](docs/interoperability.md).
