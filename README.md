@@ -1,10 +1,27 @@
 # AgentRoute
 
-AgentRoute is a portable evidence and policy-analysis layer for model-routing decisions. It records which candidates were known, why one was selected, what was later observed, and how another policy scores the same complete candidate set. It does not proxy production traffic or silently choose models. Shadow replay is explicit, budget-bounded, and executor-injected.
+AgentRoute is a vendor-neutral evidence and policy-analysis layer for model-routing decisions. It records which candidates were known, why one was selected, what was later observed, and whether measured evidence supports a policy change. It does not proxy production traffic, silently choose models, or apply compiled policies. Shadow replay is explicit, budget-bounded, and executor-injected.
 
 ![AgentRoute integration plane](diagrams/agentroute-integration-plane.png)
 
-This repository is the standalone extraction of the implementation developed in the OpenTrajectory checkout on local branch `codex/agentroute`, commit `5b22b29` (`feat: add AgentRoute routing receipts and replay`). OpenTrajectory-owned capture adapters, Inspector files, benchmarks, and unrelated docs were intentionally left behind.
+## Five-minute proof
+
+Generate a complete deterministic evidence chain without accounts, credentials,
+or network calls:
+
+```bash
+npm ci --ignore-scripts
+npm run build
+node dist/cli.js proof run --out local/proof-pack
+node dist/cli.js proof verify local/proof-pack
+```
+
+Then open `local/proof-pack/index.html` in a browser.
+
+The bundled results are **illustrative offline conformance evidence**, not a
+live benchmark or provider-performance claim. The pack binds frozen inputs,
+replay receipts, a preregistered experiment decision, quality gate, promotion
+dossier, evidence capsule, and two metadata-only telemetry exports.
 
 ## Commands
 
@@ -13,6 +30,7 @@ npm install
 npm run build
 npm test
 npm run conformance
+npm run test:package
 
 node dist/cli.js route explain examples/model-routing.route.jsonl
 node dist/cli.js route replay examples/model-routing.route.jsonl
@@ -22,6 +40,9 @@ node dist/cli.js audit examples/can-auto-routing-prove-it.route.jsonl
 node dist/cli.js lab examples/can-auto-routing-prove-it.route.jsonl -o local/decision-lab.html
 node dist/cli.js connectors
 node dist/cli.js connectors --status partial --json
+node dist/cli.js connector test native-receipt examples/model-routing.route.jsonl
+node dist/cli.js export otel-genai examples/model-routing.route.jsonl -o local/otel.json
+node dist/cli.js export openinference examples/model-routing.route.jsonl -o local/openinference.json
 node dist/cli.js route import vercel-ai-gateway saved-vercel-event.json
 node dist/cli.js ingest cloudflare-ai-gateway saved-cloudflare-log.json --ledger local/routes.route.jsonl
 node dist/cli.js evaluate braintrust saved-braintrust-score.json --ledger local/routes.route.jsonl
@@ -110,8 +131,11 @@ const report = replayRoutes(observation ? [decision, observation] : [decision]);
 - Audit-readiness grading that reports whether receipts can support a defensible comparison.
 - A standalone, interactive Decision Lab with receipt search, candidate evidence, router traces, gaps, and a predicted policy sandbox.
 - Privacy-safe OTLP/JSON export for routing decision spans.
+- Explicit OpenTelemetry GenAI and OpenInference metadata-only export profiles.
 - A typed connector map with capability-level readiness, so working decision
   imports are not confused with still-planned policy exports.
+- A dependency-free Connector SDK conformance runner that tests manifest
+  vocabulary, receipt validity, deterministic imports, and privacy canaries.
 - A Shadow Replay Arena with injected executors, fixture-only CLI execution,
   hard request/cost limits, candidate-level receipts, and measured regret.
 - Paired replay experiment analysis with matched-task comparisons, Wilson 95%
@@ -131,6 +155,8 @@ const report = replayRoutes(observation ? [decision, observation] : [decision]);
 - Tamper-evident `.arpromote` review dossiers that bind an experiment decision,
   route gate, sanitized policy diff, and recomputed dry-run vendor configurations
   into an eligible, blocked, or insufficient promotion verdict.
+- A one-command Public Proof Pack that reproducibly binds the complete offline
+  evidence chain and renders a standalone, limitation-labelled HTML report.
 - Examples, adversarial behavioral tests, and a conformance corpus.
 
 The format and UX constraints are documented in [`docs/agentroute-spec.md`](docs/agentroute-spec.md). The handoff records the stable surfaces and verification boundary.
@@ -144,8 +170,21 @@ Experiment statistics, policy lifecycle, signing, and slice-gate contracts are
 documented in [`docs/experiment-governance-spec.md`](docs/experiment-governance-spec.md).
 Preregistered decisions and promotion review artifacts are documented in
 [`docs/promotion-dossiers-spec.md`](docs/promotion-dossiers-spec.md).
+The reproducible public demonstration contract is documented in
+[`docs/public-proof-pack-spec.md`](docs/public-proof-pack-spec.md).
+Third-party adapter authors should start with
+[`docs/connector-sdk.md`](docs/connector-sdk.md), and telemetry mappings are
+documented in [`docs/interoperability.md`](docs/interoperability.md).
 
 The first end-to-end demo kit is documented in
 [`docs/can-auto-routing-prove-it.md`](docs/can-auto-routing-prove-it.md). Its
 bundled receipts are explicitly illustrative; live task generation and model
 calls require user-provided environment keys and are never run implicitly.
+
+## Release status
+
+AgentRoute is release-prepared but not yet published. `package.json` deliberately
+retains `private: true`; no package workflow can publish until a human removes
+that guard, configures the protected `npm-publish` GitHub environment, and
+approves the release. See [`SECURITY.md`](SECURITY.md),
+[`CONTRIBUTING.md`](CONTRIBUTING.md), and [`CHANGELOG.md`](CHANGELOG.md).
