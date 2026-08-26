@@ -1,0 +1,5 @@
+{
+  "scenario_version": "0.1",
+  "id": "proposed-provider-outage",
+  "unavailable_providers": ["provider-b"]
+}

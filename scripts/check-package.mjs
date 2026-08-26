@@ -27,10 +27,13 @@ const required = [
   "dist/index.d.ts",
   "dist/index.js",
   "dist/operations-review.js",
+  "dist/proof-pack.js",
   "dist/reliability-timeline.js",
   "dist/scenario.js",
   "dist/slo.js",
   "docs/operations-intelligence-spec.md",
+  "docs/launch-showcase-spec.md",
+  "docs/public-proof-pack-spec.md",
   "docs/reliability-timeline-spec.md",
   "docs/slo-operations-review-spec.md",
   "examples/model-routing.route.jsonl",
@@ -38,7 +41,10 @@ const required = [
   "examples/connectors/sample-gateway-adapter.mjs",
   "examples/connectors/sample-gateway-event.json",
   "examples/public-proof.cases.json",
+  "examples/public-proof.drift.json",
   "examples/public-proof.protocol.json",
+  "examples/public-proof.scenario.json",
+  "examples/public-proof.slo.json",
   "examples/operations-drift.json",
   "examples/provider-outage.scenario.json",
   "examples/routing-slo.json",
@@ -68,8 +74,12 @@ execFileSync("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", t
   env: { ...process.env, npm_config_cache: join(cache, "install-cache") },
 });
 const help = execFileSync(join(consumer, "node_modules", ".bin", "ar"), ["--help"], { cwd: consumer, encoding: "utf8" });
-if (!help.includes("AgentRoute") || !help.includes("ar drift") || !help.includes("ar incident") || !help.includes("ar slo") || !help.includes("ar ops") || !help.includes("ar history")) throw new Error("installed package CLI smoke test failed");
-execFileSync(process.execPath, ["--input-type=module", "-e", "import('agentroute-evidence').then(m=>{if(typeof m.evaluateRoutingDrift!=='function'||typeof m.runRoutingScenario!=='function'||typeof m.analyzeRouteIncidents!=='function'||typeof m.evaluateRoutingSlo!=='function'||typeof m.createOperationsReview!=='function'||typeof m.createReliabilityTimeline!=='function')process.exit(1)})"], { cwd: consumer, stdio: "pipe" });
+if (!help.includes("AgentRoute") || !help.includes("ar drift") || !help.includes("ar incident") || !help.includes("ar slo") || !help.includes("ar ops") || !help.includes("ar history") || !help.includes("ar proof")) throw new Error("installed package CLI smoke test failed");
+execFileSync(process.execPath, ["--input-type=module", "-e", "import('agentroute-evidence').then(m=>{if(typeof m.evaluateRoutingDrift!=='function'||typeof m.runRoutingScenario!=='function'||typeof m.analyzeRouteIncidents!=='function'||typeof m.evaluateRoutingSlo!=='function'||typeof m.createOperationsReview!=='function'||typeof m.createReliabilityTimeline!=='function'||typeof m.buildProofPack!=='function'||typeof m.verifyProofPack!=='function')process.exit(1)})"], { cwd: consumer, stdio: "pipe" });
+const installedProof = join(consumer, "proof-pack");
+const proofRun = JSON.parse(execFileSync(join(consumer, "node_modules", ".bin", "ar"), ["proof", "run", "--out", installedProof], { cwd: consumer, encoding: "utf8" }));
+const proofVerify = JSON.parse(execFileSync(join(consumer, "node_modules", ".bin", "ar"), ["proof", "verify", installedProof], { cwd: consumer, encoding: "utf8" }));
+if (proofRun.artifact_count !== 31 || !proofVerify.valid || proofVerify.dossier_verdict !== "eligible" || proofVerify.operations_status !== "attention" || proofVerify.timeline_status !== "attention") throw new Error("installed package proof-showcase verification failed");
 console.log(`package install verified: ${result.filename} (${files.length} files, ${result.size} bytes)`);
 } finally {
   rmSync(cache, { recursive: true, force: true });

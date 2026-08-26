@@ -1,0 +1,16 @@
+{
+  "slo_version": "0.1",
+  "id": "public-proof-routing-slo",
+  "minimum_samples": 12,
+  "minimum_slice_samples": 3,
+  "minimum_observation_coverage": 1,
+  "minimum_measurement_coverage": 1,
+  "include_task_slices": true,
+  "objectives": {
+    "minimum_success_rate": 1,
+    "maximum_p95_latency_ms": 2000,
+    "maximum_p95_cost_usd": 0.05,
+    "minimum_p10_quality": 0.88,
+    "maximum_policy_violation_rate": 0
+  }
+}
