@@ -1,5 +1,5 @@
 {
-  "name": "agentroute",
+  "name": "agentroute-evidence",
   "version": "0.2.0",
   "private": true,
   "description": "Portable, auditable model-routing receipts and replay analytics.",

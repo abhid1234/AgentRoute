@@ -8,7 +8,7 @@ load arbitrary packages.
 import {
   runConnectorConformance,
   type ConnectorAdapter,
-} from "agentroute";
+} from "agentroute-evidence";
 
 const adapter: ConnectorAdapter<MySavedEvent> = {
   manifest: {

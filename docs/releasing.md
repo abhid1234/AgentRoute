@@ -9,14 +9,17 @@ policies.
 2. Make the GitHub repository public only after reviewing every tracked file,
    issue, action log, and branch for private material.
 3. Create an npm package and configure AgentRoute's GitHub Actions workflow as
-   an npm trusted publisher.
+   an npm trusted publisher for `agentroute-evidence`. The unscoped
+   `agentroute` package is owned by an unrelated project and must not be used.
 4. Create a protected GitHub environment named `npm-publish` with required
    reviewers and restrict it to the release workflow.
 5. Enable private vulnerability reporting, branch protection, secret scanning,
    CodeQL, and required CI checks.
 6. Review `npm pack --dry-run --json --ignore-scripts` and the generated Public
    Proof Pack as release artifacts.
-7. In the reviewed release commit only, remove `private: true` or set it to
+7. Run the bundled drift, provider-outage scenario, and incident-review examples
+   and verify they retain no prompt, response, endpoint, error, or credential.
+8. In the reviewed release commit only, remove `private: true` or set it to
    `false`. This is an explicit publication gate, not routine development.
 
 ## Prepare without publishing

@@ -5,7 +5,7 @@ their own `ReplayExecutor` into `runReplayArena` when they deliberately want to
 call live models:
 
 ```ts
-import { runReplayArena, type ReplayExecutor } from "agentroute";
+import { runReplayArena, type ReplayExecutor } from "agentroute-evidence";
 
 const executor: ReplayExecutor = {
   id: "my-reviewed-live-runner",

@@ -39,18 +39,18 @@ jobs:
       - name: Attest package provenance
         uses: actions/attest-build-provenance@v3
         with:
-          subject-path: "agentroute-*.tgz"
+          subject-path: "agentroute-evidence-*.tgz"
       - name: Attest package SBOM
         uses: actions/attest-sbom@v3
         with:
-          subject-path: "agentroute-*.tgz"
+          subject-path: "agentroute-evidence-*.tgz"
           sbom-path: sbom.cdx.json
       - uses: actions/upload-artifact@v4
         with:
-          name: agentroute-${{ inputs.version }}
+          name: agentroute-evidence-${{ inputs.version }}
           if-no-files-found: error
           path: |
-            agentroute-*.tgz
+            agentroute-evidence-*.tgz
             package.json
             sbom.cdx.json
 
@@ -65,7 +65,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: agentroute-${{ inputs.version }}
+          name: agentroute-evidence-${{ inputs.version }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22.14.0
@@ -73,4 +73,4 @@ jobs:
       - run: npm install --global npm@11.5.1
       - name: Require explicit publication guard removal
         run: node -e "const p=require('./package.json');if(p.private!==false)throw new Error('package.json private must be false in the reviewed release commit')"
-      - run: npm publish agentroute-*.tgz --access public --provenance
+      - run: npm publish agentroute-evidence-*.tgz --access public --provenance

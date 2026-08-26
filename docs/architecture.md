@@ -13,6 +13,9 @@ flowchart TB
   BRAIN[Braintrust evaluations] -->|numeric scores| CAPTURE
   CAPTURE --> LEDGER[(Append-only evidence ledger)]
   LEDGER --> ANALYZE[Audit, replay, simulation, Decision Lab]
+  LEDGER --> DRIFT[Routing and outcome drift]
+  LEDGER --> SCENARIO[Outage and cost latency scenarios]
+  LEDGER --> INCIDENT[Incident forensics JSON and HTML]
   LEDGER --> ARENA[Shadow Replay Arena]
   ARENA -->|measured candidate receipts| LEDGER
   PROTOCOL[Preregistered experiment protocol] --> EXPERIMENT[Paired experiment decision]
@@ -113,6 +116,24 @@ explain exactly what evidence is missing and which analysis is disabled.
   deterministic imports, and privacy markers without loading third-party code.
 - **Telemetry profiles** keep prompts, outputs, endpoints, credentials, and
   arbitrary extensions out of both OpenTelemetry GenAI and OpenInference spans.
+
+## Operations-intelligence plane
+
+- **Routing drift** compares selection distributions and measured outcomes
+  between two conformant ledgers. Total-variation and per-identity changes stay
+  separate from failure, latency, cost, and quality deltas. Global checks and
+  task-type slices produce pass, fail, or insufficient-evidence results.
+- **Resilience scenarios** model provider/model outages and cost or latency
+  multipliers without live probes. They walk only the recorded selected
+  candidate and fallback order, enforce the recorded route criteria, and make
+  stranded routes or missing estimates explicit.
+- **Incident forensics** turns failed or missing outcomes, actual-versus-selected
+  execution differences, measured threshold breaches, policy violations, and
+  instrumentation gaps into stable findings. Its standalone HTML contains only
+  allowlisted facts and makes no root-cause claim.
+
+These workflows remain read-only. None calls a vendor, mutates a ledger, applies
+a compiled policy, or treats missing evidence as a successful measurement.
 
 ## Public proof and release plane
 

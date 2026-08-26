@@ -37,6 +37,14 @@ node dist/cli.js route replay examples/model-routing.route.jsonl
 node dist/cli.js route simulate examples/model-routing.route.jsonl --policy examples/fast-cheap-policy.json
 node dist/cli.js report examples/can-auto-routing-prove-it.route.jsonl
 node dist/cli.js audit examples/can-auto-routing-prove-it.route.jsonl
+node dist/cli.js drift examples/can-auto-routing-prove-it.route.jsonl \
+  examples/can-auto-routing-prove-it.route.jsonl \
+  --config examples/operations-drift.json
+node dist/cli.js scenario examples/model-routing.route.jsonl \
+  --scenario examples/provider-outage.scenario.json
+node dist/cli.js incident analyze examples/model-routing.route.jsonl
+node dist/cli.js incident open examples/model-routing.route.jsonl \
+  -o local/incident-review.html
 node dist/cli.js lab examples/can-auto-routing-prove-it.route.jsonl -o local/decision-lab.html
 node dist/cli.js connectors
 node dist/cli.js connectors --status partial --json
@@ -105,10 +113,12 @@ node dist/cli.js report local/vendor-demo.route.jsonl
 
 The `ar` package binary accepts both `ar ...` and the historical `ar route ...` form.
 
-Applications can also import the typed library surface after `npm run build`:
+Applications can also import the typed library surface after `npm run build`.
+The npm package candidate is `agentroute-evidence`; the project and CLI remain
+AgentRoute and `ar`:
 
 ```ts
-import { importCloudflareAiGatewayRoute, replayRoutes } from "agentroute";
+import { importCloudflareAiGatewayRoute, replayRoutes } from "agentroute-evidence";
 
 const { decision, observation } = importCloudflareAiGatewayRoute(savedLog);
 const report = replayRoutes(observation ? [decision, observation] : [decision]);
@@ -157,6 +167,13 @@ const report = replayRoutes(observation ? [decision, observation] : [decision]);
   into an eligible, blocked, or insufficient promotion verdict.
 - A one-command Public Proof Pack that reproducibly binds the complete offline
   evidence chain and renders a standalone, limitation-labelled HTML report.
+- Routing drift intelligence that measures model/provider selection movement,
+  outcome regression, and task-type slices against preregistered thresholds.
+- Offline resilience scenarios for provider/model outages and scoped cost or
+  latency shocks, using only recorded candidates and fallback order.
+- Privacy-safe incident forensics with stable findings and standalone HTML for
+  failed outcomes, execution mismatches, measured SLO breaches, policy
+  violations, and evidence gaps.
 - Examples, adversarial behavioral tests, and a conformance corpus.
 
 The format and UX constraints are documented in [`docs/agentroute-spec.md`](docs/agentroute-spec.md). The handoff records the stable surfaces and verification boundary.
@@ -177,6 +194,8 @@ Third-party adapter authors should start with
 documented in [`docs/interoperability.md`](docs/interoperability.md).
 Applications that deliberately supply a live replay executor should follow
 [`docs/live-benchmarking.md`](docs/live-benchmarking.md).
+Operational drift, resilience, and incident contracts are documented in
+[`docs/operations-intelligence-spec.md`](docs/operations-intelligence-spec.md).
 
 The first end-to-end demo kit is documented in
 [`docs/can-auto-routing-prove-it.md`](docs/can-auto-routing-prove-it.md). Its
@@ -188,5 +207,8 @@ calls require user-provided environment keys and are never run implicitly.
 AgentRoute is release-prepared but not yet published. `package.json` deliberately
 retains `private: true`; no package workflow can publish until a human removes
 that guard, configures the protected `npm-publish` GitHub environment, and
-approves the release. See [`SECURITY.md`](SECURITY.md),
+approves the release. The unscoped `agentroute` name is already owned by an
+unrelated project, so the prepared package name is `agentroute-evidence`. Name
+availability was checked during preparation but is not reserved until publish.
+See [`SECURITY.md`](SECURITY.md),
 [`CONTRIBUTING.md`](CONTRIBUTING.md), and [`CHANGELOG.md`](CHANGELOG.md).

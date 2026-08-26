@@ -20,6 +20,13 @@ released; entries below describe the intended first public release line.
 - Connector SDK conformance contract and native reference adapter.
 - Explicit offline-versus-user-supplied evidence provenance on Replay Arena
   reports, with a budget-bounded live executor contract.
+- Routing drift reports with model/provider distribution distance, measured
+  outcome deltas, preregistered limits, and task-type slices.
+- Read-only resilience scenarios for provider/model outages and cost or latency
+  shocks over recorded fallback evidence.
+- Privacy-safe incident forensics in deterministic JSON and standalone HTML.
+- Collision-free npm package candidate `agentroute-evidence`; the AgentRoute
+  project name and `ar` binary remain unchanged.
 
 ### Security
 

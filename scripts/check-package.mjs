@@ -1,20 +1,18 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+if (pkg.name !== "agentroute-evidence") throw new Error("release package name must remain agentroute-evidence");
 const cache = mkdtempSync(join(tmpdir(), "agentroute-npm-cache-"));
 let output;
 try {
-  output = execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], {
+  output = execFileSync("npm", ["pack", "--json", "--ignore-scripts", "--pack-destination", cache], {
     cwd: new URL("..", import.meta.url),
     encoding: "utf8",
     env: { ...process.env, npm_config_cache: cache },
   });
-} finally {
-  rmSync(cache, { recursive: true, force: true });
-}
 const result = JSON.parse(output)[0];
 if (!result || !Array.isArray(result.files)) throw new Error("npm pack did not return a package file manifest");
 const files = result.files.map((entry) => entry.path).sort();
@@ -24,14 +22,20 @@ const required = [
   "README.md",
   "SECURITY.md",
   "dist/cli.js",
+  "dist/drift.js",
+  "dist/incident.js",
   "dist/index.d.ts",
   "dist/index.js",
+  "dist/scenario.js",
+  "docs/operations-intelligence-spec.md",
   "examples/model-routing.route.jsonl",
   "examples/evidence-suite.replay-fixtures.json",
   "examples/connectors/sample-gateway-adapter.mjs",
   "examples/connectors/sample-gateway-event.json",
   "examples/public-proof.cases.json",
   "examples/public-proof.protocol.json",
+  "examples/operations-drift.json",
+  "examples/provider-outage.scenario.json",
   "package.json",
   "route-conformance/check.mjs",
   "schema/routedecision-0.1.schema.json",
@@ -49,4 +53,18 @@ const forbidden = files.filter((path) =>
 if (forbidden.length) throw new Error(`package contains forbidden files: ${forbidden.join(", ")}`);
 const bin = pkg.bin?.ar;
 if (typeof bin !== "string" || !files.includes(bin.replace(/^\.\//, ""))) throw new Error("package bin.ar does not reference a packed file");
-console.log(`package dry run verified: ${result.filename} (${files.length} files, ${result.size} bytes)`);
+const tarball = join(cache, result.filename);
+const consumer = join(cache, "consumer");
+mkdirSync(consumer);
+execFileSync("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", tarball], {
+  cwd: consumer,
+  stdio: "pipe",
+  env: { ...process.env, npm_config_cache: join(cache, "install-cache") },
+});
+const help = execFileSync(join(consumer, "node_modules", ".bin", "ar"), ["--help"], { cwd: consumer, encoding: "utf8" });
+if (!help.includes("AgentRoute") || !help.includes("ar drift") || !help.includes("ar incident")) throw new Error("installed package CLI smoke test failed");
+execFileSync(process.execPath, ["--input-type=module", "-e", "import('agentroute-evidence').then(m=>{if(typeof m.evaluateRoutingDrift!=='function'||typeof m.runRoutingScenario!=='function'||typeof m.analyzeRouteIncidents!=='function')process.exit(1)})"], { cwd: consumer, stdio: "pipe" });
+console.log(`package install verified: ${result.filename} (${files.length} files, ${result.size} bytes)`);
+} finally {
+  rmSync(cache, { recursive: true, force: true });
+}
