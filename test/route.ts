@@ -33,6 +33,7 @@ import {
 import { captureOpenRouter } from "../src/openrouter-capture.js";
 import { evaluationToObservation, evaluateChecklist, fromBraintrustEvaluation } from "../src/evaluation.js";
 import { buildDecisionLabModel, renderDecisionLab } from "../src/decision-lab.js";
+import { evaluateRoutingDrift } from "../src/drift.js";
 import { auditRouteRecords } from "../src/route-audit.js";
 import { createEvidenceCapsule, renderCapsuleLab, signEvidenceCapsule, verifyEvidenceCapsule } from "../src/capsule.js";
 import { analyzeReplayExperiment } from "../src/experiment.js";
@@ -108,6 +109,20 @@ throws("policy simulation rejects non-normalized weights", () => simulateRoutePo
 const excludedOriginal = simulateRoutePolicy([valid], { id: "latency-ceiling", criteria: { max_latency_ms: 75 }, weights: { quality: 1 } });
 ok("policy simulation can replace a selected candidate excluded by new criteria", excludedOriginal.changed === 1 && excludedOriginal.choices[0].simulated_candidate_id === "runner-up");
 
+console.log("routing drift intelligence");
+const baselineObservation = createRouteObservation({ route_id: valid.route_id, observation_id: "obs_drift_baseline", observed_at: "2026-08-22T10:00:01.000Z", outcome: { status: "success", latency_ms: 100, cost_usd: 0.02, quality: 0.9 } });
+const driftedDecision = createRouteDecision({ ...valid, selection: { candidate_id: "runner-up", reason: "traffic shifted", fallback_order: ["winner"] } });
+const driftedObservation = createRouteObservation({ route_id: valid.route_id, observation_id: "obs_drift_current", observed_at: "2026-08-22T10:00:01.000Z", outcome: { status: "failure", latency_ms: 200, cost_usd: 0.03, quality: 0.7 } });
+const driftConfig = { minimum_baseline_samples: 1, minimum_current_samples: 1, minimum_observation_coverage: 1, maximum_total_variation: 0.25, maximum_selection_share_change: 0.25, maximum_failure_rate_increase: 0.1, maximum_mean_latency_increase_percent: 20, maximum_mean_cost_increase_percent: 20, minimum_mean_quality_delta: -0.05, include_task_slices: true };
+const stableDrift = evaluateRoutingDrift([valid, baselineObservation], [valid, baselineObservation], driftConfig, "2026-08-25T12:00:00.000Z");
+ok("identical routing evidence passes drift checks", stableDrift.status === "pass" && stableDrift.global.total_variation === 0 && stableDrift.checks.every((check) => check.status === "pass"));
+const materialDrift = evaluateRoutingDrift([valid, baselineObservation], [driftedDecision, driftedObservation], driftConfig, "2026-08-25T12:00:00.000Z");
+ok("routing drift detects selection and measured outcome regressions", materialDrift.status === "fail" && materialDrift.global.total_variation === 1 && materialDrift.global.newly_selected[0] === "provider-b/model-b" && materialDrift.checks.some((check) => check.metric === "mean_quality_delta" && check.status === "fail"));
+ok("routing drift produces deterministic task slices", materialDrift.by_task_type.code_review.scope === "task:code_review" && JSON.stringify(materialDrift) === JSON.stringify(evaluateRoutingDrift([valid, baselineObservation], [driftedDecision, driftedObservation], driftConfig, "2026-08-25T12:00:00.000Z")));
+const insufficientDrift = evaluateRoutingDrift([valid], [valid], driftConfig, "2026-08-25T12:00:00.000Z");
+ok("routing drift distinguishes missing outcome evidence", insufficientDrift.status === "insufficient" && insufficientDrift.checks.some((check) => check.metric === "mean_quality_delta" && check.status === "insufficient"));
+throws("routing drift rejects unknown configuration", () => evaluateRoutingDrift([valid], [valid], { surprise: 1 } as never), "unknown keys");
+
 console.log("append-only ledger");
 const scratch = mkdtempSync(join(tmpdir(), "agentroute-"));
 const ledger = join(scratch, "routes.route.jsonl");
@@ -135,6 +150,10 @@ try {
   ok("CLI explains a ledger", explain.includes("selected model-a") && explain.includes("observed: success"));
   const replay = execFileSync(process.execPath, ["--import", "tsx", cli, "route", "replay", ledger], { encoding: "utf8" });
   ok("CLI emits replay JSON", JSON.parse(replay).decisions === 1);
+  const cliDriftConfig = join(scratch, "drift.json");
+  writeFileSync(cliDriftConfig, JSON.stringify(driftConfig));
+  const cliDrift = execFileSync(process.execPath, ["--import", "tsx", cli, "drift", ledger, ledger, "--config", cliDriftConfig], { encoding: "utf8" });
+  ok("CLI evaluates routing drift", JSON.parse(cliDrift).status === "pass");
   execFileSync(process.execPath, ["--import", "tsx", cli, "route", "validate", ledger], { encoding: "utf8" });
   ok("CLI validates a ledger", true);
   const cliDecision = join(scratch, "decision.json");

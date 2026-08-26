@@ -9,6 +9,8 @@ import { evaluationToObservation, fromBraintrustEvaluation } from "./evaluation.
 import { analyzeReplayExperiment } from "./experiment.js";
 import { decideReplayExperiment } from "./experiment-protocol.js";
 import { writeDecisionLab } from "./decision-lab.js";
+import { evaluateRoutingDrift } from "./drift.js";
+import type { RoutingDriftConfig } from "./drift.js";
 import { captureOpenRouter } from "./openrouter-capture.js";
 import { startObservatory } from "./observatory.js";
 import { compilePolicy, diffPolicies, validatePolicy } from "./policy-registry.js";
@@ -94,6 +96,7 @@ const HELP = `AgentRoute — auditable model-routing receipts
   ot route simulate <routes.route.jsonl> --policy policy.json [-o report.json]
   ar report <routes.route.jsonl> [--route-id ID] [-o report.txt]
   ar audit <routes.route.jsonl> [-o audit.json]
+  ar drift <baseline.route.jsonl> <current.route.jsonl> --config drift.json [-o report.json]
   ar lab <routes.route.jsonl> -o decision-lab.html
   ar arena <routes.route.jsonl> --tasks tasks.json --fixtures outcomes.json --max-requests N --max-cost-usd N [--ledger replay.route.jsonl] [-o report.json]
   ar serve <routes.route.jsonl> [--experiment-ledger replay.route.jsonl] [--host 127.0.0.1] [--port 4319] [--allow-remote]
@@ -285,6 +288,20 @@ export async function runRouteCli(args: string[]): Promise<void> {
     const input = rest[0];
     if (!input) throw new Error("usage: ar audit <routes.route.jsonl> [-o audit.json]");
     emit(auditRouteRecords(loadRouteRecords(input)), option(rest, "-o", "--out"));
+    return;
+  }
+
+  if (command === "drift") {
+    const [baseline, current] = rest;
+    const configPath = option(rest, "--config");
+    if (!baseline || !current || !configPath) throw new Error("usage: ar drift <baseline.route.jsonl> <current.route.jsonl> --config drift.json [-o report.json]");
+    const result = evaluateRoutingDrift(
+      loadRouteRecords(baseline),
+      loadRouteRecords(current),
+      JSON.parse(readFileSync(configPath, "utf8")) as RoutingDriftConfig,
+    );
+    emit(result, option(rest, "-o", "--out"));
+    if (result.status === "fail") throw new Error("AgentRoute routing drift check failed");
     return;
   }
 

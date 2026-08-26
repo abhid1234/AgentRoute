@@ -5,6 +5,7 @@ export * from "./connector-sdk.js";
 export * from "./canonical.js";
 export * from "./capsule.js";
 export * from "./decision-lab.js";
+export * from "./drift.js";
 export * from "./evaluation.js";
 export * from "./experiment.js";
 export * from "./experiment-protocol.js";

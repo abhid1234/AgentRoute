@@ -1,0 +1,12 @@
+{
+  "minimum_baseline_samples": 1,
+  "minimum_current_samples": 1,
+  "minimum_observation_coverage": 1,
+  "maximum_total_variation": 0.25,
+  "maximum_selection_share_change": 0.25,
+  "maximum_failure_rate_increase": 0.05,
+  "maximum_mean_latency_increase_percent": 20,
+  "maximum_mean_cost_increase_percent": 20,
+  "minimum_mean_quality_delta": -0.05,
+  "include_task_slices": true
+}
