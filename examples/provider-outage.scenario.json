@@ -1,0 +1,19 @@
+{
+  "scenario_version": "0.1",
+  "id": "provider-a-outage-and-cost-shock",
+  "unavailable_providers": ["provider-a"],
+  "cost_multipliers": [
+    {
+      "model": "model-b",
+      "provider": "provider-b",
+      "multiplier": 1.5
+    }
+  ],
+  "latency_multipliers": [
+    {
+      "model": "model-b",
+      "provider": "provider-b",
+      "multiplier": 1.25
+    }
+  ]
+}

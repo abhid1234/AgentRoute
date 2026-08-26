@@ -1,0 +1,19 @@
+{
+  "id": "demo-vercel-request",
+  "created_at": "2026-08-23T12:01:00.000Z",
+  "model": "anthropic/claude-sonnet-4",
+  "providerMetadata": {
+    "gateway": {
+      "provider": "anthropic",
+      "requestId": "demo-vercel-request"
+    }
+  },
+  "providerOptions": {
+    "order": ["anthropic", "vertex"],
+    "only": ["anthropic", "vertex"],
+    "models": ["openai/gpt-5"]
+  },
+  "status_code": 200,
+  "latency_ms": 231,
+  "cost_usd": 0.0051
+}

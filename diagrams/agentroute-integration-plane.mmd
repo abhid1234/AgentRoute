@@ -1,0 +1,30 @@
+flowchart TB
+  APP[Agents and applications] --> EXEC[Model and gateway execution]
+  EXEC --> SOURCES[OpenRouter, LiteLLM, Portkey, Vercel, Cloudflare]
+  SOURCES -->|allowlisted metadata| CAPTURE[Receipt capture and ingest]
+  BRAIN[Braintrust evaluations] -->|numeric scores| CAPTURE
+  CAPTURE --> LEDGER[(Append-only evidence ledger)]
+
+  subgraph evidence[Evidence workflows]
+    LEDGER --> ANALYZE[Audit, replay, simulation, Decision Lab]
+    LEDGER --> ARENA[Shadow Replay Arena]
+    ARENA -->|measured candidate receipts| LEDGER
+    PROTOCOL[Preregistered experiment protocol] --> EXPERIMENT[Paired experiment decision]
+    ARENA --> EXPERIMENT
+    EXPERIMENT -->|wins, deltas, uncertainty, slices| OBS[Live Route Observatory]
+    LEDGER --> OBS
+    LEDGER --> GATE[Global and task-slice quality gates]
+    LEDGER --> CAPSULE[Portable evidence capsule]
+    CAPSULE --> SIGN[Ed25519 sign and trust verification]
+  end
+
+  ANALYZE --> POLICY[Durable policy registry and history]
+  HUMAN[Explicit human approval] -->|attests approval| POLICY
+  POLICY --> COMPILE[Dry-run vendor compilers]
+  EXPERIMENT --> DOSSIER[Promotion review dossier]
+  GATE --> DOSSIER
+  POLICY --> DOSSIER
+  COMPILE --> DOSSIER
+  DOSSIER --> REVIEW[Human review and apply]
+  REVIEW -. explicit external action .-> SOURCES
+  LEDGER -->|privacy-safe spans| OTEL[OpenTelemetry]

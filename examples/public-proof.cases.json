@@ -1,0 +1,18 @@
+{
+  "case_version": "0.1",
+  "evidence_label": "illustrative",
+  "cases": [
+    { "id": "code_review_01", "task_type": "code_review", "baseline": { "quality": 0.94, "latency_ms": 1400, "cost_usd": 0.038 }, "challenger": { "quality": 0.92, "latency_ms": 480, "cost_usd": 0.009 } },
+    { "id": "code_review_02", "task_type": "code_review", "baseline": { "quality": 0.91, "latency_ms": 1500, "cost_usd": 0.04 }, "challenger": { "quality": 0.90, "latency_ms": 500, "cost_usd": 0.01 } },
+    { "id": "code_review_03", "task_type": "code_review", "baseline": { "quality": 0.93, "latency_ms": 1350, "cost_usd": 0.036 }, "challenger": { "quality": 0.91, "latency_ms": 460, "cost_usd": 0.009 } },
+    { "id": "research_01", "task_type": "research", "baseline": { "quality": 0.90, "latency_ms": 1800, "cost_usd": 0.045 }, "challenger": { "quality": 0.89, "latency_ms": 700, "cost_usd": 0.015 } },
+    { "id": "research_02", "task_type": "research", "baseline": { "quality": 0.88, "latency_ms": 1700, "cost_usd": 0.042 }, "challenger": { "quality": 0.90, "latency_ms": 720, "cost_usd": 0.016 } },
+    { "id": "research_03", "task_type": "research", "baseline": { "quality": 0.92, "latency_ms": 1850, "cost_usd": 0.047 }, "challenger": { "quality": 0.90, "latency_ms": 690, "cost_usd": 0.015 } },
+    { "id": "summarization_01", "task_type": "summarization", "baseline": { "quality": 0.89, "latency_ms": 900, "cost_usd": 0.02 }, "challenger": { "quality": 0.90, "latency_ms": 300, "cost_usd": 0.005 } },
+    { "id": "summarization_02", "task_type": "summarization", "baseline": { "quality": 0.91, "latency_ms": 950, "cost_usd": 0.022 }, "challenger": { "quality": 0.89, "latency_ms": 320, "cost_usd": 0.006 } },
+    { "id": "summarization_03", "task_type": "summarization", "baseline": { "quality": 0.88, "latency_ms": 850, "cost_usd": 0.019 }, "challenger": { "quality": 0.88, "latency_ms": 290, "cost_usd": 0.005 } },
+    { "id": "security_01", "task_type": "security", "baseline": { "quality": 0.96, "latency_ms": 1600, "cost_usd": 0.044 }, "challenger": { "quality": 0.94, "latency_ms": 600, "cost_usd": 0.014 } },
+    { "id": "security_02", "task_type": "security", "baseline": { "quality": 0.95, "latency_ms": 1550, "cost_usd": 0.043 }, "challenger": { "quality": 0.94, "latency_ms": 620, "cost_usd": 0.014 } },
+    { "id": "security_03", "task_type": "security", "baseline": { "quality": 0.93, "latency_ms": 1500, "cost_usd": 0.041 }, "challenger": { "quality": 0.92, "latency_ms": 580, "cost_usd": 0.013 } }
+  ]
+}

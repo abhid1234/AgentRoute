@@ -1,0 +1,9 @@
+{
+  "tasks": [
+    {
+      "route_id": "route_example_code_review",
+      "task_ref": "task-pack://offline/code-review-1",
+      "candidate_ids": ["deep-review", "fast-review"]
+    }
+  ]
+}

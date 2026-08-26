@@ -1,0 +1,29 @@
+name: AgentRoute routing quality gate
+description: Compare current routing evidence with a checked-in baseline.
+inputs:
+  current:
+    description: Current AgentRoute JSONL ledger
+    required: true
+  baseline:
+    description: Baseline AgentRoute JSONL ledger
+    required: true
+  config:
+    description: AgentRoute quality-gate JSON config
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Build the pinned AgentRoute revision
+      shell: bash
+      working-directory: ${{ github.action_path }}/../../..
+      run: |
+        set -euo pipefail
+        npm ci --ignore-scripts
+        npm run build
+    - name: Evaluate the routing quality gate
+      shell: bash
+      env:
+        AGENTROUTE_CURRENT: ${{ inputs.current }}
+        AGENTROUTE_BASELINE: ${{ inputs.baseline }}
+        AGENTROUTE_CONFIG: ${{ inputs.config }}
+      run: node "$GITHUB_ACTION_PATH/run.mjs"

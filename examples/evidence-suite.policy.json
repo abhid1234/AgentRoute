@@ -1,0 +1,22 @@
+{
+  "policy_version": "0.1",
+  "id": "balanced-code-review",
+  "version": "1.0.0",
+  "status": "reviewed",
+  "description": "Prefer quality while keeping review latency and cost bounded.",
+  "criteria": {
+    "max_cost_usd": 0.05,
+    "max_latency_ms": 2000,
+    "min_quality": 0.8,
+    "required_capabilities": ["code"]
+  },
+  "weights": {
+    "quality": 0.6,
+    "latency": 0.2,
+    "cost": 0.2
+  },
+  "models": [
+    { "model": "frontier-review-model", "provider": "provider-a" },
+    { "model": "fast-review-model", "provider": "provider-b" }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "protocol_version": "0.1",
+  "id": "fast-review-promotion",
+  "description": "Require the faster reviewer to preserve quality within a declared margin.",
+  "baseline_candidate_id": "deep-review",
+  "challenger_candidate_id": "fast-review",
+  "minimum_matched_pairs": 1,
+  "quality_tie_tolerance": 0.01,
+  "thresholds": {
+    "minimum_mean_quality_delta": -0.07,
+    "minimum_quality_win_rate_95ci_low": 0,
+    "maximum_mean_latency_delta_ms": 0,
+    "maximum_mean_cost_delta_usd": 0,
+    "minimum_success_rate_delta": 0
+  },
+  "required_task_types": ["code_review"]
+}

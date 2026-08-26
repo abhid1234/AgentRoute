@@ -1,0 +1,13 @@
+{
+  "id": "demo-cloudflare-log",
+  "created_at": "2026-08-23T12:02:00.000Z",
+  "model": "@cf/meta/llama-4-scout",
+  "provider": "workers-ai",
+  "success": true,
+  "status_code": 200,
+  "duration": 96,
+  "cost_usd": 0.00021,
+  "tokens_in": 64,
+  "tokens_out": 31,
+  "cached": false
+}
