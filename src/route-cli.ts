@@ -4,6 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createEvidenceCapsule, loadEvidenceCapsule, renderCapsuleLab, signEvidenceCapsule, verifyEvidenceCapsule, writeEvidenceCapsule } from "./capsule.js";
 import { formatConnectorCatalog, isConnectorCapability, isConnectorRole, isConnectorStatus, listConnectors } from "./connectors.js";
 import type { ConnectorFilters } from "./connectors.js";
+import { NATIVE_RECEIPT_ADAPTER, runConnectorConformance } from "./connector-sdk.js";
 import { evaluationToObservation, fromBraintrustEvaluation } from "./evaluation.js";
 import { analyzeReplayExperiment } from "./experiment.js";
 import { decideReplayExperiment } from "./experiment-protocol.js";
@@ -14,6 +15,7 @@ import { compilePolicy, diffPolicies, validatePolicy } from "./policy-registry.j
 import type { PolicyTarget } from "./policy-registry.js";
 import { addPolicyToRegistry, initializePolicyRegistry, loadPolicyRegistry, transitionPolicyInRegistry } from "./policy-store.js";
 import { createPromotionDossier, loadPromotionDossier, renderPromotionDossier, verifyPromotionDossier, writePromotionDossier } from "./promotion-dossier.js";
+import { buildProofPack, verifyProofPack } from "./proof-pack.js";
 import type { PolicyStatus } from "./policy-registry.js";
 import { evaluateRouteGate, formatGitHubGate } from "./quality-gate.js";
 import type { RouteGateConfig } from "./quality-gate.js";
@@ -31,7 +33,8 @@ import {
 } from "./route-adapters.js";
 import { auditRouteRecords } from "./route-audit.js";
 import { formatRouteReport } from "./route-report.js";
-import { routeToOtel } from "./route-to-otel.js";
+import { routeToOtel, routeToTelemetry } from "./route-to-otel.js";
+import type { TelemetryProfile } from "./route-to-otel.js";
 import {
   appendRouteRecord,
   createRouteDecision,
@@ -107,12 +110,16 @@ const HELP = `AgentRoute — auditable model-routing receipts
   ar promotion create <replay.route.jsonl> --protocol protocol.json --policy policy.json --baseline baseline.route.jsonl --current current.route.jsonl --gate gate.json --target TARGET -o review.arpromote
   ar promotion verify <review.arpromote>
   ar promotion open <review.arpromote> -o review.html
+  ar proof run --out proof-pack [--force]
+  ar proof verify <proof-pack>
   ar capsule create <routes.route.jsonl> -o evidence.arcap [--policy policy.json]
   ar capsule verify <evidence.arcap> [--require-signature] [--public-key public.pem]
   ar capsule sign <evidence.arcap> --private-key private.pem -o signed.arcap
   ar capsule open <evidence.arcap> -o decision-lab.html
   ar connectors [--json] [--status available|partial|planned] [--role ROLE] [--capability CAPABILITY]
+  ar connector test native-receipt <receipt.route.json|routes.route.jsonl> [--forbid MARKER]
   ar task-pack exa <seeds.json> [-o task-pack.json]
+  ar export <otel-genai|openinference> <receipt.route.json|routes.route.jsonl> [--route-id ID] [-o traces.json]
   ot route to-otel <receipt.route.json|routes.route.jsonl> [--route-id ID] [-o traces.json]
   ot route import <openrouter|litellm|portkey|vercel-ai-gateway|cloudflare-ai-gateway> <event.json> [-o receipt.route.json] [--complete-candidates]
 
@@ -497,6 +504,26 @@ export async function runRouteCli(args: string[]): Promise<void> {
     throw new Error("usage: ar capsule <create|verify|sign|open> ...");
   }
 
+  if (command === "proof") {
+    const [action, input] = rest;
+    if (action === "run") {
+      const output = option(rest, "--out", "-o");
+      if (!output) throw new Error("proof run requires --out <proof-pack-directory>");
+      const manifest = await buildProofPack({ output, force: rest.includes("--force") });
+      const verification = verifyProofPack(output);
+      if (!verification.valid) throw new Error(`generated proof pack failed verification:\n  - ${verification.errors.join("\n  - ")}`);
+      emit({ output, root_sha256: manifest.root_sha256, artifact_count: manifest.artifacts.length, dossier_verdict: verification.dossier_verdict });
+      return;
+    }
+    if (action === "verify" && input) {
+      const verification = verifyProofPack(input);
+      emit(verification, option(rest, "--out", "-o"));
+      if (!verification.valid) throw new Error("AgentRoute proof pack verification failed");
+      return;
+    }
+    throw new Error("usage: ar proof <run --out DIRECTORY|verify DIRECTORY>");
+  }
+
   if (command === "connectors") {
     const status = option(rest, "--status");
     const role = option(rest, "--role");
@@ -520,6 +547,17 @@ export async function runRouteCli(args: string[]): Promise<void> {
     return;
   }
 
+  if (command === "connector") {
+    const [action, adapterId, input] = rest;
+    if (action !== "test" || adapterId !== "native-receipt" || !input) throw new Error("usage: ar connector test native-receipt <receipt.route.json|routes.route.jsonl> [--forbid MARKER]");
+    const forbidden: string[] = [];
+    for (let index = 0; index < rest.length; index++) if (rest[index] === "--forbid" && rest[index + 1]) forbidden.push(rest[index + 1]);
+    const result = await runConnectorConformance(NATIVE_RECEIPT_ADAPTER, [{ name: input, fixture: loadRouteRecords(input), forbidden_markers: forbidden }]);
+    emit(result, option(rest, "-o", "--out"));
+    if (!result.valid) throw new Error("AgentRoute connector conformance failed");
+    return;
+  }
+
   if (command === "task-pack") {
     const [source, input] = rest;
     if (source !== "exa" || !input) throw new Error("usage: ar task-pack exa <seeds.json> [-o task-pack.json]");
@@ -527,6 +565,18 @@ export async function runRouteCli(args: string[]): Promise<void> {
     const seeds = (Array.isArray(raw) ? raw : (raw as { seeds?: unknown }).seeds) as TaskSeed[];
     const pack = await createExaTaskPack({ apiKey: process.env.EXA_API_KEY || "", seeds });
     emit(pack, option(rest, "-o", "--out"));
+    return;
+  }
+
+  if (command === "export") {
+    const [profileValue, input] = rest;
+    if (!input || !["otel-genai", "openinference"].includes(profileValue)) throw new Error("usage: ar export <otel-genai|openinference> <receipt.route.json|routes.route.jsonl> [--route-id ID] [-o traces.json]");
+    const states = foldRouteRecords(loadRouteRecords(input));
+    const requested = option(rest, "--route-id");
+    if (requested && !states.has(requested)) throw new Error(`route_id not found: ${requested}`);
+    const selected = requested ? [states.get(requested)!] : [...states.values()];
+    const traces = selected.map((state) => routeToTelemetry(state, profileValue as TelemetryProfile));
+    emit(traces.length === 1 ? traces[0] : traces, option(rest, "-o", "--out"));
     return;
   }
 

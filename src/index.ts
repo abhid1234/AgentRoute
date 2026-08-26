@@ -1,6 +1,7 @@
 // Public AgentRoute library surface. Keep command parsing in route-cli.ts;
 // applications should build receipts and imports through these typed modules.
 export * from "./connectors.js";
+export * from "./connector-sdk.js";
 export * from "./canonical.js";
 export * from "./capsule.js";
 export * from "./decision-lab.js";
@@ -12,6 +13,7 @@ export * from "./observatory.js";
 export * from "./policy-registry.js";
 export * from "./policy-store.js";
 export * from "./promotion-dossier.js";
+export * from "./proof-pack.js";
 export * from "./quality-gate.js";
 export * from "./replay-arena.js";
 export * from "./route-adapters.js";

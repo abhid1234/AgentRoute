@@ -8,6 +8,9 @@ declare module "node:fs" {
   export function writeFileSync(path: string, data: string): void;
   export function appendFileSync(path: string, data: string): void;
   export function existsSync(path: string): boolean;
+  export function mkdirSync(path: string, options?: { recursive?: boolean }): string | undefined;
+  export function readdirSync(path: string): string[];
+  export function statSync(path: string): { isFile(): boolean; isDirectory(): boolean };
   export function renameSync(oldPath: string, newPath: string): void;
   export function unlinkSync(path: string): void;
   export function watch(path: string, listener: () => void): FSWatcher;

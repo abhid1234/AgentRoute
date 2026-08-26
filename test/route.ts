@@ -1,7 +1,7 @@
 // AgentRoute behavioral and adversarial tests.
 import { execFileSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +20,7 @@ import {
   simulateRoutePolicy,
 } from "../src/route.js";
 import { formatConnectorCatalog, listConnectors } from "../src/connectors.js";
+import { NATIVE_RECEIPT_ADAPTER, runConnectorConformance } from "../src/connector-sdk.js";
 import {
   fromCloudflareAiGatewayRoute,
   fromLiteLLMRoute,
@@ -40,11 +41,12 @@ import { startObservatory } from "../src/observatory.js";
 import { compilePolicy, diffPolicies, validatePolicyRegistry } from "../src/policy-registry.js";
 import { addPolicyToRegistry, initializePolicyRegistry, loadPolicyRegistry, transitionPolicyInRegistry } from "../src/policy-store.js";
 import { createPromotionDossier, renderPromotionDossier, verifyPromotionDossier } from "../src/promotion-dossier.js";
+import { buildProofPack, verifyProofPack } from "../src/proof-pack.js";
 import { evaluateRouteGate, formatGitHubGate, validateRouteGateResult } from "../src/quality-gate.js";
 import { fixtureReplayExecutor, runReplayArena } from "../src/replay-arena.js";
 import { formatReceiptDetail, formatRouteReport } from "../src/route-report.js";
 import { createExaTaskPack } from "../src/task-pack.js";
-import { routeToOtel } from "../src/route-to-otel.js";
+import { routeToOtel, routeToTelemetry } from "../src/route-to-otel.js";
 import { validateRouteLedger, validateRouteRecord } from "../src/route-validate.js";
 import type { RouteDecision, RouteRecord } from "../src/route-types.js";
 
@@ -689,11 +691,15 @@ ok("connector catalog marks tested imports and dry-run compilers available", rea
 ok("connector catalog has no capability-partial policy targets after compiler delivery", partialPolicyTargets.length === 0);
 ok("connector catalog exposes measured gateway observation import", listConnectors({ capability: "observation-import" }).map((item) => item.id).join(",") === "portkey,vercel-ai-gateway,cloudflare-ai-gateway");
 ok("connector catalog renders tested policy-export capabilities", formatConnectorCatalog().includes("policy-export") && !formatConnectorCatalog().includes("policy-export:planned"));
+ok("connector catalog advertises both standards export profiles", listConnectors({ capability: "trace-export" }).map((item) => item.id).join(",") === "opentelemetry,openinference");
 
 console.log("OpenTelemetry and published artifacts");
 const otelText = JSON.stringify(routeToOtel({ decision: valid, observations: [] }));
 ok("OTel identifies select_model operation", otelText.includes("select_model") && otelText.includes("model-a"));
 ok("OTel omits task descriptions and endpoints", !otelText.includes("private task text") && !otelText.includes("private.invalid"));
+const openInferenceText = JSON.stringify(routeToTelemetry({ decision: hostile, observations: [] }, "openinference"));
+ok("OpenInference exports a metadata-only LLM span", openInferenceText.includes("openinference.span.kind") && openInferenceText.includes("llm.model_name"));
+ok("OpenInference omits task content, endpoints, selection reasons, and extensions", !openInferenceText.includes("private prompt") && !openInferenceText.includes("private.invalid") && !openInferenceText.includes("never-render-this") && !openInferenceText.includes("onerror"));
 const example = JSON.parse(readFileSync(join(root, "examples/code-review.route.json"), "utf8"));
 ok("standalone example passes runtime validation", validateRouteRecord(example).valid, validateRouteRecord(example).errors.join("; "));
 const corpus = parseRouteRecords(readFileSync(join(root, "examples/model-routing.route.jsonl"), "utf8"));
@@ -733,6 +739,45 @@ throws("ledger validator rejects duplicate decisions", () => {
   const result = validateRouteLedger([valid, valid]);
   if (!result.valid) throw new Error(result.errors.join("; "));
 }, "duplicate decision");
+
+console.log("connector SDK conformance");
+const nativeConformance = await runConnectorConformance(NATIVE_RECEIPT_ADAPTER, [{ name: "native-ledger", fixture: [valid] }]);
+ok("native connector reference adapter passes schema, determinism, and privacy checks", nativeConformance.valid && nativeConformance.checks.every((check) => check.status === "pass"));
+const leakingConnector = await runConnectorConformance(NATIVE_RECEIPT_ADAPTER, [{ name: "privacy-canary", fixture: [hostile], forbidden_markers: ["never-render-this"] }]);
+ok("connector conformance fails closed on forbidden marker leakage", !leakingConnector.valid && leakingConnector.checks.some((check) => check.check === "privacy" && check.status === "fail"));
+let nondeterministicCalls = 0;
+const nondeterministicConnector = await runConnectorConformance({
+  manifest: { ...NATIVE_RECEIPT_ADAPTER.manifest, id: "nondeterministic-test" },
+  importFixture: () => createRouteDecision({ ...valid, route_id: `route_nondeterministic_${++nondeterministicCalls}` }),
+}, [{ name: "nondeterminism", fixture: {} }]);
+ok("connector conformance rejects nondeterministic imports", !nondeterministicConnector.valid && nondeterministicConnector.checks.some((check) => check.check === "determinism" && check.status === "fail"));
+
+console.log("Public Proof Pack");
+const proofScratch = mkdtempSync(join(tmpdir(), "agentroute-proof-"));
+try {
+  const first = join(proofScratch, "first");
+  const second = join(proofScratch, "second");
+  const firstManifest = await buildProofPack({ output: first });
+  const secondManifest = await buildProofPack({ output: second });
+  const firstVerification = verifyProofPack(first);
+  ok("proof pack binds an eligible offline evidence chain", firstVerification.valid && firstVerification.dossier_verdict === "eligible" && firstManifest.claim_scope === "offline_conformance");
+  const firstFiles = readdirSync(first).sort();
+  const secondFiles = readdirSync(second).sort();
+  ok("clean proof runs emit the same file set", JSON.stringify(firstFiles) === JSON.stringify(secondFiles));
+  ok("clean proof runs are byte-identical", firstFiles.every((file) => readFileSync(join(first, file), "utf8") === readFileSync(join(second, file), "utf8")));
+  const reportText = readFileSync(join(first, "index.html"), "utf8");
+  ok("proof report is standalone and carries the benchmark limitation", reportText.includes("Illustrative offline conformance evidence") && !reportText.includes("<script") && !reportText.includes("https://"));
+  writeFileSync(join(first, "experiment-decision.json"), "{}\n");
+  ok("proof verification detects bound artifact tampering", !verifyProofPack(first).valid && verifyProofPack(first).errors.some((error) => error.includes("SHA-256 mismatch")));
+  writeFileSync(join(second, "unexpected.txt"), "unbound");
+  ok("proof verification rejects unbound additions", !verifyProofPack(second).valid && verifyProofPack(second).errors.some((error) => error.includes("exactly match")));
+  const cliProof = join(proofScratch, "cli");
+  const cli = join(root, "src/cli.ts");
+  const cliResult = JSON.parse(execFileSync(process.execPath, ["--import", "tsx", cli, "proof", "run", "--out", cliProof], { encoding: "utf8" }));
+  ok("CLI builds and verifies the complete proof pack in one command", cliResult.artifact_count === firstManifest.artifacts.length && verifyProofPack(cliProof).valid);
+} finally {
+  rmSync(proofScratch, { recursive: true, force: true });
+}
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

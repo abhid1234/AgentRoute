@@ -19,8 +19,25 @@ const text = (key: string, value: string): Attr => ({ key, value: { stringValue:
 const integer = (key: string, value: number): Attr => ({ key, value: { intValue: String(value) } });
 const decimal = (key: string, value: number): Attr => ({ key, value: { doubleValue: value } });
 
-/** Convert one folded route decision into an OTLP/JSON trace export object. */
-export function routeToOtel(state: RouteState): Record<string, unknown> {
+export type TelemetryProfile = "otel-genai" | "openinference";
+
+function profileAttributes(profile: TelemetryProfile, model: string, provider?: string): Attr[] {
+  if (profile === "openinference") {
+    return [
+      text("openinference.span.kind", "LLM"),
+      text("llm.model_name", model),
+      ...(provider ? [text("llm.provider", provider)] : []),
+    ];
+  }
+  return [
+    text("gen_ai.operation.name", "select_model"),
+    text("gen_ai.request.model", model),
+    ...(provider ? [text("gen_ai.provider.name", provider)] : []),
+  ];
+}
+
+/** Convert one folded route decision into a metadata-only OTLP/JSON export. */
+export function routeToTelemetry(state: RouteState, profile: TelemetryProfile = "otel-genai"): Record<string, unknown> {
   const decision = state.decision;
   const selected = decision.candidates.find((candidate) => candidate.id === decision.selection.candidate_id)!;
   const traceId = (fnv1a(decision.route_id) + fnv1a(`route:${decision.route_id}`) + fnv1a(decision.router.name) + fnv1a("agentroute")).slice(0, 32).padEnd(32, "0");
@@ -29,8 +46,7 @@ export function routeToOtel(state: RouteState): Record<string, unknown> {
   const ended = state.latest_observation ? BigInt(Date.parse(state.latest_observation.observed_at)) * 1_000_000n : started + 1n;
   const violations = policyViolations(decision);
   const attrs: Attr[] = [
-    text("gen_ai.operation.name", "select_model"),
-    text("gen_ai.request.model", selected.model),
+    ...profileAttributes(profile, selected.model, selected.provider),
     text("agentroute.route_id", decision.route_id),
     text("agentroute.router.name", decision.router.name),
     text("agentroute.task.type", decision.task.type),
@@ -39,7 +55,6 @@ export function routeToOtel(state: RouteState): Record<string, unknown> {
     integer("agentroute.candidate.count", decision.candidates.length),
     integer("agentroute.policy.violation_count", violations.length),
   ];
-  if (selected.provider) attrs.push(text("gen_ai.provider.name", selected.provider));
   if (decision.router.policy_id) attrs.push(text("agentroute.policy.id", decision.router.policy_id));
   if (decision.selection.confidence !== undefined) attrs.push(decimal("agentroute.selection.confidence", decision.selection.confidence));
   const outcome = state.latest_observation?.outcome;
@@ -53,7 +68,7 @@ export function routeToOtel(state: RouteState): Record<string, unknown> {
     resourceSpans: [{
       resource: { attributes: [text("service.name", "agentroute"), text("agentroute.route_id", decision.route_id)] },
       scopeSpans: [{
-        scope: { name: "opentrajectory/agentroute", version: "0.1.0" },
+        scope: { name: "agentroute", version: "0.2.0" },
         spans: [{
           traceId,
           spanId,
@@ -67,4 +82,9 @@ export function routeToOtel(state: RouteState): Record<string, unknown> {
       }],
     }],
   };
+}
+
+/** Backward-compatible name for the OpenTelemetry GenAI profile. */
+export function routeToOtel(state: RouteState): Record<string, unknown> {
+  return routeToTelemetry(state, "otel-genai");
 }

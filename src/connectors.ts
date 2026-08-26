@@ -109,6 +109,17 @@ export const AGENTROUTE_CONNECTORS: readonly AgentRouteConnector[] = [
     docs_url: "https://opentelemetry.io/docs/specs/semconv/",
   },
   {
+    id: "openinference",
+    name: "OpenInference",
+    status: "available",
+    direction: "outbound",
+    roles: ["telemetry"],
+    capabilities: ["trace-export"],
+    transport: "privacy-safe OTLP JSON",
+    summary: "Exports OpenInference LLM spans without prompts, outputs, endpoints, or arbitrary metadata.",
+    docs_url: "https://github.com/Arize-ai/openinference/tree/main/spec",
+  },
+  {
     id: "portkey",
     name: "Portkey AI Gateway",
     status: "available",
