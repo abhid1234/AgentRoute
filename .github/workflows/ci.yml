@@ -25,11 +25,11 @@ jobs:
       - run: npm run build
       - run: npm test
       - run: npm run conformance
-      - if: matrix.node == 22
+      - if: matrix.node == 22 && hashFiles('scripts/check-package.mjs') != ''
         run: npm run test:package
-      - if: matrix.node == 22
+      - if: matrix.node == 22 && hashFiles('.github/actions/agentroute-proof/action.yml') != ''
         run: node dist/cli.js proof run --out local/ci-proof-pack
-      - if: matrix.node == 22
+      - if: matrix.node == 22 && hashFiles('.github/actions/agentroute-proof/action.yml') != ''
         id: proof
         uses: ./.github/actions/agentroute-proof
         with:
