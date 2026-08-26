@@ -1,0 +1,76 @@
+name: Prepare and optionally publish release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact package version to prepare
+        required: true
+        type: string
+      publish_npm:
+        description: Publish through the protected npm-publish environment
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run verify
+      - name: Verify requested version
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: node -e "const p=require('./package.json');if(p.version!==process.env.REQUESTED_VERSION)throw new Error('requested version does not match package.json')"
+      - name: Build package and SBOM
+        run: |
+          npm pack --ignore-scripts
+          npm sbom --sbom-format cyclonedx > sbom.cdx.json
+      - name: Attest package provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: "agentroute-*.tgz"
+      - name: Attest package SBOM
+        uses: actions/attest-sbom@v3
+        with:
+          subject-path: "agentroute-*.tgz"
+          sbom-path: sbom.cdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agentroute-${{ inputs.version }}
+          if-no-files-found: error
+          path: |
+            agentroute-*.tgz
+            package.json
+            sbom.cdx.json
+
+  publish-npm:
+    if: ${{ inputs.publish_npm }}
+    needs: build
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: agentroute-${{ inputs.version }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          registry-url: https://registry.npmjs.org
+      - run: npm install --global npm@11.5.1
+      - name: Require explicit publication guard removal
+        run: node -e "const p=require('./package.json');if(p.private!==false)throw new Error('package.json private must be false in the reviewed release commit')"
+      - run: npm publish agentroute-*.tgz --access public --provenance
