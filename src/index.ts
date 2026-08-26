@@ -17,6 +17,7 @@ export * from "./policy-registry.js";
 export * from "./policy-store.js";
 export * from "./promotion-dossier.js";
 export * from "./proof-pack.js";
+export * from "./proof-attestation.js";
 export * from "./quality-gate.js";
 export * from "./reliability-timeline.js";
 export * from "./replay-arena.js";

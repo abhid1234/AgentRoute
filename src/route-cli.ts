@@ -20,6 +20,7 @@ import type { PolicyTarget } from "./policy-registry.js";
 import { addPolicyToRegistry, initializePolicyRegistry, loadPolicyRegistry, transitionPolicyInRegistry } from "./policy-store.js";
 import { createPromotionDossier, loadPromotionDossier, renderPromotionDossier, verifyPromotionDossier, writePromotionDossier } from "./promotion-dossier.js";
 import { buildProofPack, verifyProofPack } from "./proof-pack.js";
+import { signProofPack, verifyProofAttestation, writeProofAttestation } from "./proof-attestation.js";
 import type { PolicyStatus } from "./policy-registry.js";
 import { evaluateRouteGate, formatGitHubGate } from "./quality-gate.js";
 import type { RouteGateConfig } from "./quality-gate.js";
@@ -130,7 +131,8 @@ const HELP = `AgentRoute — auditable model-routing receipts
   ar promotion verify <review.arpromote>
   ar promotion open <review.arpromote> -o review.html
   ar proof run --out proof-pack [--force]
-  ar proof verify <proof-pack>
+  ar proof sign <proof-pack> --private-key private.pem -o proof.arsig
+  ar proof verify <proof-pack> [--attestation proof.arsig] [--public-key public.pem]
   ar capsule create <routes.route.jsonl> -o evidence.arcap [--policy policy.json]
   ar capsule verify <evidence.arcap> [--require-signature] [--public-key public.pem]
   ar capsule sign <evidence.arcap> --private-key private.pem -o signed.arcap
@@ -654,13 +656,28 @@ export async function runRouteCli(args: string[]): Promise<void> {
       emit({ output, root_sha256: manifest.root_sha256, artifact_count: manifest.artifacts.length, dossier_verdict: verification.dossier_verdict });
       return;
     }
+    if (action === "sign" && input) {
+      const privateKeyPath = option(rest, "--private-key");
+      const output = option(rest, "--out", "-o");
+      if (!privateKeyPath || !output) throw new Error("proof sign requires --private-key and -o <proof.arsig>");
+      if (existsSync(output) && !rest.includes("--force")) throw new Error(`${output} already exists; pass --force to replace it`);
+      const attestation = signProofPack(input, readFileSync(privateKeyPath, "utf8"));
+      writeProofAttestation(output, attestation);
+      console.error(`wrote detached AgentRoute proof attestation -> ${output}`);
+      return;
+    }
     if (action === "verify" && input) {
-      const verification = verifyProofPack(input);
+      const attestationPath = option(rest, "--attestation");
+      const publicKeyPath = option(rest, "--public-key");
+      if (publicKeyPath && !attestationPath) throw new Error("proof verify requires --attestation when --public-key is provided");
+      const verification = attestationPath
+        ? verifyProofAttestation(input, JSON.parse(readFileSync(attestationPath, "utf8")), publicKeyPath ? { public_key_pem: readFileSync(publicKeyPath, "utf8") } : {})
+        : verifyProofPack(input);
       emit(verification, option(rest, "--out", "-o"));
       if (!verification.valid) throw new Error("AgentRoute proof pack verification failed");
       return;
     }
-    throw new Error("usage: ar proof <run --out DIRECTORY|verify DIRECTORY>");
+    throw new Error("usage: ar proof <run|sign|verify> ...");
   }
 
   if (command === "connectors") {

@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { generateKeyPairSync } from "node:crypto";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -27,6 +28,7 @@ const required = [
   "dist/index.d.ts",
   "dist/index.js",
   "dist/operations-review.js",
+  "dist/proof-attestation.js",
   "dist/proof-pack.js",
   "dist/reliability-timeline.js",
   "dist/scenario.js",
@@ -34,6 +36,7 @@ const required = [
   "docs/operations-intelligence-spec.md",
   "docs/launch-showcase-spec.md",
   "docs/public-proof-pack-spec.md",
+  "docs/proof-attestation-spec.md",
   "docs/reliability-timeline-spec.md",
   "docs/slo-operations-review-spec.md",
   "examples/model-routing.route.jsonl",
@@ -75,11 +78,20 @@ execFileSync("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", t
 });
 const help = execFileSync(join(consumer, "node_modules", ".bin", "ar"), ["--help"], { cwd: consumer, encoding: "utf8" });
 if (!help.includes("AgentRoute") || !help.includes("ar drift") || !help.includes("ar incident") || !help.includes("ar slo") || !help.includes("ar ops") || !help.includes("ar history") || !help.includes("ar proof")) throw new Error("installed package CLI smoke test failed");
-execFileSync(process.execPath, ["--input-type=module", "-e", "import('agentroute-evidence').then(m=>{if(typeof m.evaluateRoutingDrift!=='function'||typeof m.runRoutingScenario!=='function'||typeof m.analyzeRouteIncidents!=='function'||typeof m.evaluateRoutingSlo!=='function'||typeof m.createOperationsReview!=='function'||typeof m.createReliabilityTimeline!=='function'||typeof m.buildProofPack!=='function'||typeof m.verifyProofPack!=='function')process.exit(1)})"], { cwd: consumer, stdio: "pipe" });
+execFileSync(process.execPath, ["--input-type=module", "-e", "import('agentroute-evidence').then(m=>{if(typeof m.evaluateRoutingDrift!=='function'||typeof m.runRoutingScenario!=='function'||typeof m.analyzeRouteIncidents!=='function'||typeof m.evaluateRoutingSlo!=='function'||typeof m.createOperationsReview!=='function'||typeof m.createReliabilityTimeline!=='function'||typeof m.buildProofPack!=='function'||typeof m.verifyProofPack!=='function'||typeof m.signProofPack!=='function'||typeof m.verifyProofAttestation!=='function')process.exit(1)})"], { cwd: consumer, stdio: "pipe" });
 const installedProof = join(consumer, "proof-pack");
 const proofRun = JSON.parse(execFileSync(join(consumer, "node_modules", ".bin", "ar"), ["proof", "run", "--out", installedProof], { cwd: consumer, encoding: "utf8" }));
 const proofVerify = JSON.parse(execFileSync(join(consumer, "node_modules", ".bin", "ar"), ["proof", "verify", installedProof], { cwd: consumer, encoding: "utf8" }));
 if (proofRun.artifact_count !== 31 || !proofVerify.valid || proofVerify.dossier_verdict !== "eligible" || proofVerify.operations_status !== "attention" || proofVerify.timeline_status !== "attention") throw new Error("installed package proof-showcase verification failed");
+const proofKeys = generateKeyPairSync("ed25519");
+const proofPrivateKeyPath = join(consumer, "proof-private.pem");
+const proofPublicKeyPath = join(consumer, "proof-public.pem");
+const proofAttestationPath = join(consumer, "proof-pack.arsig");
+writeFileSync(proofPrivateKeyPath, proofKeys.privateKey.export({ type: "pkcs8", format: "pem" }));
+writeFileSync(proofPublicKeyPath, proofKeys.publicKey.export({ type: "spki", format: "pem" }));
+execFileSync(join(consumer, "node_modules", ".bin", "ar"), ["proof", "sign", installedProof, "--private-key", proofPrivateKeyPath, "-o", proofAttestationPath], { cwd: consumer, stdio: "pipe" });
+const trustedProof = JSON.parse(execFileSync(join(consumer, "node_modules", ".bin", "ar"), ["proof", "verify", installedProof, "--attestation", proofAttestationPath, "--public-key", proofPublicKeyPath], { cwd: consumer, encoding: "utf8" }));
+if (!trustedProof.valid || !trustedProof.signature_valid || !trustedProof.signature_trusted) throw new Error("installed package proof-attestation verification failed");
 console.log(`package install verified: ${result.filename} (${files.length} files, ${result.size} bytes)`);
 } finally {
   rmSync(cache, { recursive: true, force: true });

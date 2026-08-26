@@ -45,6 +45,7 @@ declare module "node:crypto" {
   export function createHash(algorithm: "sha256"): Hash;
   export function randomUUID(): string;
   interface KeyObject {
+    asymmetricKeyType?: string;
     export(options: { type: "spki"; format: "pem" }): string;
   }
   interface CryptoBuffer {

@@ -45,6 +45,7 @@ import { compilePolicy, diffPolicies, validatePolicyRegistry } from "../src/poli
 import { addPolicyToRegistry, initializePolicyRegistry, loadPolicyRegistry, transitionPolicyInRegistry } from "../src/policy-store.js";
 import { createPromotionDossier, renderPromotionDossier, verifyPromotionDossier } from "../src/promotion-dossier.js";
 import { buildProofPack, verifyProofPack } from "../src/proof-pack.js";
+import { signProofPack, verifyProofAttestation, writeProofAttestation } from "../src/proof-attestation.js";
 import { evaluateRouteGate, formatGitHubGate, validateRouteGateResult } from "../src/quality-gate.js";
 import { appendReliabilityReview, appendReliabilityTimeline, createReliabilityTimeline, initializeReliabilityTimeline, loadReliabilityTimeline, renderReliabilityTimeline, verifyReliabilityTimeline } from "../src/reliability-timeline.js";
 import { fixtureReplayExecutor, runReplayArena } from "../src/replay-arena.js";
@@ -960,6 +961,30 @@ try {
   const secondFiles = readdirSync(second).sort();
   ok("clean proof runs emit the same file set", JSON.stringify(firstFiles) === JSON.stringify(secondFiles));
   ok("clean proof runs are byte-identical", firstFiles.every((file) => readFileSync(join(first, file), "utf8") === readFileSync(join(second, file), "utf8")));
+  const proofKeys = generateKeyPairSync("ed25519");
+  const proofPrivateKey = proofKeys.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const proofPublicKey = proofKeys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  const proofAttestation = signProofPack(first, proofPrivateKey);
+  const repeatedAttestation = signProofPack(first, proofPrivateKey);
+  const embeddedProofSignature = verifyProofAttestation(first, proofAttestation);
+  const trustedProofSignature = verifyProofAttestation(first, proofAttestation, { public_key_pem: proofPublicKey });
+  ok("proof attestations are deterministic for the same pack and Ed25519 key", JSON.stringify(proofAttestation) === JSON.stringify(repeatedAttestation));
+  ok("proof attestations distinguish signature validity from signer trust", embeddedProofSignature.valid && embeddedProofSignature.signature_valid === true && embeddedProofSignature.signature_trusted === false && embeddedProofSignature.warnings.length === 1 && trustedProofSignature.valid && trustedProofSignature.signature_trusted === true);
+  ok("proof attestations expose only the public key and exact proof subject", !JSON.stringify(proofAttestation).includes(proofPrivateKey) && proofAttestation.subject.root_sha256 === firstManifest.root_sha256 && proofAttestation.subject.artifact_count === firstManifest.artifacts.length);
+  const wrongProofKey = generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" }).toString();
+  ok("proof attestations reject a different trusted signer", !verifyProofAttestation(first, proofAttestation, { public_key_pem: wrongProofKey }).valid);
+  const rsaProofKey = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  throws("proof signing rejects non-Ed25519 private keys", () => signProofPack(first, rsaProofKey), "Ed25519");
+  const changedProofSubject = JSON.parse(JSON.stringify(proofAttestation));
+  changedProofSubject.subject.root_sha256 = `sha256:${"0".repeat(64)}`;
+  ok("proof attestations reject subject tampering", !verifyProofAttestation(first, changedProofSubject).valid);
+  const damagedProofSignature = JSON.parse(JSON.stringify(proofAttestation));
+  damagedProofSignature.signature_base64 = `${damagedProofSignature.signature_base64[0] === "A" ? "B" : "A"}${damagedProofSignature.signature_base64.slice(1)}`;
+  ok("proof attestations reject signature tampering", !verifyProofAttestation(first, damagedProofSignature).valid);
+  const malformedProofKey = { ...proofAttestation, public_key_pem: "not a public key" };
+  ok("proof attestations reject malformed public keys", !verifyProofAttestation(first, malformedProofKey).valid);
+  const extendedProofAttestation = { ...proofAttestation, private_note: "must fail closed" };
+  ok("proof attestations reject unknown fields", verifyProofAttestation(first, extendedProofAttestation).errors.some((error) => error.includes("unknown keys")));
   const reportText = readFileSync(join(first, "index.html"), "utf8");
   const operationsReport = readFileSync(join(first, "operations-review.html"), "utf8");
   const reliabilityReport = readFileSync(join(first, "reliability.html"), "utf8");
@@ -969,6 +994,8 @@ try {
   writeFileSync(join(first, "operations.arops"), "{}\n");
   const operationsTamper = verifyProofPack(first);
   ok("proof verification detects operations-review tampering", !operationsTamper.valid && operationsTamper.errors.some((error) => error.includes("operations review") || error.includes("operations.arops")));
+  ok("proof attestation verification rejects a changed proof pack", !verifyProofAttestation(first, proofAttestation).proof_valid);
+  throws("proof signing refuses an invalid proof pack", () => signProofPack(first, proofPrivateKey), "cannot sign invalid");
   writeFileSync(join(first, "operations.arops"), operationsOriginal);
   const timelineOriginal = readFileSync(join(first, "reliability.arhistory"), "utf8");
   writeFileSync(join(first, "reliability.arhistory"), "{}\n");
@@ -995,6 +1022,18 @@ try {
   const cli = join(root, "src/cli.ts");
   const cliResult = JSON.parse(execFileSync(process.execPath, ["--import", "tsx", cli, "proof", "run", "--out", cliProof], { encoding: "utf8" }));
   ok("CLI builds and verifies the complete proof pack in one command", cliResult.artifact_count === firstManifest.artifacts.length && verifyProofPack(cliProof).valid);
+  const proofPrivateKeyPath = join(proofScratch, "proof-private.pem");
+  const proofPublicKeyPath = join(proofScratch, "proof-public.pem");
+  const proofAttestationPath = join(proofScratch, "proof.arsig");
+  writeFileSync(proofPrivateKeyPath, proofPrivateKey);
+  writeFileSync(proofPublicKeyPath, proofPublicKey);
+  execFileSync(process.execPath, ["--import", "tsx", cli, "proof", "sign", cliProof, "--private-key", proofPrivateKeyPath, "-o", proofAttestationPath], { encoding: "utf8" });
+  const cliTrustedProof = JSON.parse(execFileSync(process.execPath, ["--import", "tsx", cli, "proof", "verify", cliProof, "--attestation", proofAttestationPath, "--public-key", proofPublicKeyPath], { encoding: "utf8" }));
+  ok("CLI signs and trust-verifies a detached proof attestation", cliTrustedProof.valid && cliTrustedProof.signature_valid && cliTrustedProof.signature_trusted);
+  throws("CLI refuses a trusted key without a detached attestation", () => execFileSync(process.execPath, ["--import", "tsx", cli, "proof", "verify", cliProof, "--public-key", proofPublicKeyPath], { encoding: "utf8" }), "--attestation");
+  const libraryAttestationPath = join(proofScratch, "library.arsig");
+  writeProofAttestation(libraryAttestationPath, proofAttestation);
+  ok("proof attestation writer emits canonical newline-terminated JSON", readFileSync(libraryAttestationPath, "utf8").endsWith("\n") && JSON.parse(readFileSync(libraryAttestationPath, "utf8")).subject.root_sha256 === firstManifest.root_sha256);
 } finally {
   rmSync(proofScratch, { recursive: true, force: true });
 }
