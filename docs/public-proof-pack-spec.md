@@ -1,6 +1,7 @@
 # Public Proof Pack specification
 
-Status: implementation target for AgentRoute v0.2.0.
+Status: implemented for AgentRoute v0.2.0; expanded by the Launch Showcase
+contract in [`launch-showcase-spec.md`](launch-showcase-spec.md).
 
 ## Product claim
 
@@ -24,6 +25,10 @@ It must create a directory containing:
 - a preregistered experiment decision;
 - a promotion dossier and its independent verification result;
 - an evidence capsule and its independent verification result;
+- a drift/SLO/outage operations review and its independent verification result;
+- a two-review hash-chained reliability timeline and its independent
+  verification result;
+- a deterministic connector capability catalog;
 - privacy-safe OpenTelemetry GenAI and OpenInference exports;
 - `proof-manifest.json`, binding every input and output by digest; and
 - `index.html`, a standalone report that explains the evidence chain and its

@@ -17,6 +17,10 @@ policies.
    CodeQL, and required CI checks.
 6. Review `npm pack --dry-run --json --ignore-scripts` and the generated Public
    Proof Pack as release artifacts.
+   Confirm `proof verify` reports 31 artifacts, an `eligible` dossier,
+   `attention` operations and timeline statuses, and the complete built-in
+   connector count. Those statuses are expected for the illustrative outage
+   story and are not live provider claims.
 7. Run the bundled drift, routing-SLO, provider-outage scenario, incident-review,
    `.arops` operations-review, and `.arhistory` reliability-timeline workflows.
    Verify the portable artifacts and standalone HTML retain no prompt, response,

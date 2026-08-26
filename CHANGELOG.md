@@ -14,7 +14,9 @@ released; entries below describe the intended first public release line.
 - Shadow Replay Arena, paired experiments, preregistered decisions, quality
   gates, policy lifecycle, dry-run compilers, evidence capsules, and promotion
   dossiers.
-- Reproducible Public Proof Pack with a standalone HTML report and fail-closed
+- Reproducible 31-artifact Launch Showcase with connected experiment,
+  promotion, operations, outage-resilience, connector, and longitudinal
+  reliability evidence; three standalone HTML review surfaces; and fail-closed
   verification.
 - OpenTelemetry GenAI and OpenInference export profiles.
 - Connector SDK conformance contract and native reference adapter.

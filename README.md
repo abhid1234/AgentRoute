@@ -18,10 +18,15 @@ node dist/cli.js proof verify local/proof-pack
 
 Then open `local/proof-pack/index.html` in a browser.
 
-The bundled twelve-case, four-slice results are **illustrative offline conformance evidence**, not a
-live benchmark or provider-performance claim. The pack binds frozen inputs,
-replay receipts, a preregistered experiment decision, quality gate, promotion
-dossier, evidence capsule, and two metadata-only telemetry exports.
+The bundled twelve-case, four-slice results are **illustrative offline
+conformance evidence**, not a live benchmark or provider-performance claim.
+The 31-artifact showcase connects frozen inputs, replay receipts, a
+preregistered experiment decision, quality gate, five-target dry-run promotion
+dossier, evidence capsule, operational drift and SLO review, provider-outage
+scenario, two-review reliability timeline, connector catalog, and two
+metadata-only telemetry exports. The experiment is eligible while the outage
+scenario remains visibly `attention`: evidence for a change is not the same as
+proof that operating it has no risk.
 
 ## Commands
 
@@ -184,8 +189,10 @@ const report = replayRoutes(observation ? [decision, observation] : [decision]);
 - Tamper-evident `.arpromote` review dossiers that bind an experiment decision,
   route gate, sanitized policy diff, and recomputed dry-run vendor configurations
   into an eligible, blocked, or insufficient promotion verdict.
-- A one-command Public Proof Pack that reproducibly binds the complete offline
-  evidence chain and renders a standalone, limitation-labelled HTML report.
+- A one-command Launch Showcase that reproducibly binds 31 offline artifacts,
+  links experiment, promotion, operations, resilience, connectors, and
+  longitudinal reliability, and renders three standalone limitation-labelled
+  HTML review surfaces.
 - Routing drift intelligence that measures model/provider selection movement,
   outcome regression, and task-type slices against preregistered thresholds.
 - Offline resilience scenarios for provider/model outages and scoped cost or
@@ -216,6 +223,8 @@ Preregistered decisions and promotion review artifacts are documented in
 [`docs/promotion-dossiers-spec.md`](docs/promotion-dossiers-spec.md).
 The reproducible public demonstration contract is documented in
 [`docs/public-proof-pack-spec.md`](docs/public-proof-pack-spec.md).
+The connected launch-day walkthrough and its exact truth constraints are
+documented in [`docs/launch-showcase-spec.md`](docs/launch-showcase-spec.md).
 Third-party adapter authors should start with
 [`docs/connector-sdk.md`](docs/connector-sdk.md), and telemetry mappings are
 documented in [`docs/interoperability.md`](docs/interoperability.md).

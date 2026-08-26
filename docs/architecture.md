@@ -164,15 +164,21 @@ artifacts but never publishes by default.
 flowchart LR
   CASES[12 frozen illustrative cases] --> RUN[Offline proof runner]
   RUN --> RECEIPTS[24 replay executions and receipts]
+  CASES --> OPLEDGERS[Baseline and proposed operational ledgers]
   RECEIPTS --> DECISION[Preregistered experiment decision]
   RECEIPTS --> GATE[Baseline vs challenger slice gate]
   DECISION --> DOSSIER[Verified promotion dossier]
   GATE --> DOSSIER
   RECEIPTS --> CAPSULE[Verified evidence capsule]
   RECEIPTS --> EXPORTS[OTel GenAI and OpenInference]
+  OPLEDGERS --> OPS[Drift + SLO + outage operations review]
+  OPS --> HISTORY[Two-review hash-chained reliability timeline]
+  CATALOG[Built-in connector capability catalog] --> MANIFEST
   DOSSIER --> MANIFEST[SHA-256 proof manifest]
   CAPSULE --> MANIFEST
   EXPORTS --> MANIFEST
+  OPS --> MANIFEST
+  HISTORY --> MANIFEST
   MANIFEST --> REPORT[Standalone HTML report]
   MANIFEST --> VERIFY[Fail-closed proof verification]
   VERIFY --> PACK[npm package allowlist]
@@ -182,7 +188,10 @@ flowchart LR
 ```
 
 The default corpus is large enough to exercise global and per-slice coverage,
-but its outcomes remain illustrative. Live provider evidence must be generated
+an expected selection shift, and a non-stranded provider outage, but its
+outcomes remain illustrative. The landing page deliberately shows an eligible
+promotion beside an `attention` operations assessment so review evidence is not
+misrepresented as risk-free operation. Live provider evidence must be generated
 separately with user-supplied executors and labelled provenance. The release
 workflow prepares a tarball, CycloneDX SBOM, and attestations; npm publication
 requires both removal of the package's private guard and approval in the
