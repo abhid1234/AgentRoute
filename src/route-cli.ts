@@ -14,6 +14,7 @@ import type { RoutingDriftConfig } from "./drift.js";
 import { analyzeRouteIncidents, renderIncidentReport } from "./incident.js";
 import { captureOpenRouter } from "./openrouter-capture.js";
 import { startObservatory } from "./observatory.js";
+import { createOperationsReview, loadOperationsReview, renderOperationsReview, verifyOperationsReview, writeOperationsReview } from "./operations-review.js";
 import { compilePolicy, diffPolicies, validatePolicy } from "./policy-registry.js";
 import type { PolicyTarget } from "./policy-registry.js";
 import { addPolicyToRegistry, initializePolicyRegistry, loadPolicyRegistry, transitionPolicyInRegistry } from "./policy-store.js";
@@ -104,6 +105,9 @@ const HELP = `AgentRoute — auditable model-routing receipts
   ar incident analyze <routes.route.jsonl> [-o report.json]
   ar incident open <routes.route.jsonl> -o incident-review.html [--force]
   ar slo evaluate <routes.route.jsonl> --config slo.json [-o report.json]
+  ar ops create <current.route.jsonl> --baseline baseline.route.jsonl --drift drift.json --slo slo.json [--scenario scenario.json] -o review.arops
+  ar ops verify <review.arops>
+  ar ops open <review.arops> -o review.html
   ar lab <routes.route.jsonl> -o decision-lab.html
   ar arena <routes.route.jsonl> --tasks tasks.json --fixtures outcomes.json --max-requests N --max-cost-usd N [--ledger replay.route.jsonl] [-o report.json]
   ar serve <routes.route.jsonl> [--experiment-ledger replay.route.jsonl] [--host 127.0.0.1] [--port 4319] [--allow-remote]
@@ -345,6 +349,45 @@ export async function runRouteCli(args: string[]): Promise<void> {
     emit(result, option(rest, "-o", "--out"));
     if (result.status === "fail") throw new Error("AgentRoute routing SLO failed");
     return;
+  }
+
+  if (command === "ops") {
+    const [action, input] = rest;
+    if (action === "create" && input) {
+      const baselinePath = option(rest, "--baseline");
+      const driftPath = option(rest, "--drift");
+      const sloPath = option(rest, "--slo");
+      const output = option(rest, "-o", "--out");
+      if (!baselinePath || !driftPath || !sloPath || !output) throw new Error("ops create requires --baseline, --drift, --slo, and -o <review.arops>");
+      if (existsSync(output) && !rest.includes("--force")) throw new Error(`${output} already exists; pass --force to replace it`);
+      const scenarioPaths: string[] = [];
+      for (let index = 0; index < rest.length; index++) if (rest[index] === "--scenario" && rest[index + 1]) scenarioPaths.push(rest[index + 1]);
+      const review = createOperationsReview({
+        baseline_records: loadRouteRecords(baselinePath),
+        current_records: loadRouteRecords(input),
+        drift_config: JSON.parse(readFileSync(driftPath, "utf8")) as RoutingDriftConfig,
+        slo_config: JSON.parse(readFileSync(sloPath, "utf8")),
+        scenarios: scenarioPaths.map((path) => JSON.parse(readFileSync(path, "utf8"))),
+      });
+      writeOperationsReview(output, review);
+      console.error(`wrote AgentRoute operations review (${review.payload.assessment.status}) -> ${output}`);
+      return;
+    }
+    if (action === "verify" && input) {
+      const result = verifyOperationsReview(JSON.parse(readFileSync(input, "utf8")));
+      emit(result, option(rest, "-o", "--out"));
+      if (!result.valid) throw new Error("AgentRoute operations review verification failed");
+      return;
+    }
+    if (action === "open" && input) {
+      const output = option(rest, "-o", "--out");
+      if (!output) throw new Error("ops open requires -o <review.html>");
+      if (existsSync(output) && !rest.includes("--force")) throw new Error(`${output} already exists; pass --force to replace it`);
+      writeFileSync(output, renderOperationsReview(loadOperationsReview(input)));
+      console.error(`wrote verified AgentRoute operations review -> ${output}`);
+      return;
+    }
+    throw new Error("usage: ar ops <create|verify|open> ...");
   }
 
   if (command === "lab") {

@@ -40,6 +40,7 @@ import { createEvidenceCapsule, renderCapsuleLab, signEvidenceCapsule, verifyEvi
 import { analyzeReplayExperiment } from "../src/experiment.js";
 import { decideReplayExperiment, validateExperimentDecision, validateExperimentProtocol } from "../src/experiment-protocol.js";
 import { startObservatory } from "../src/observatory.js";
+import { createOperationsReview, renderOperationsReview, verifyOperationsReview } from "../src/operations-review.js";
 import { compilePolicy, diffPolicies, validatePolicyRegistry } from "../src/policy-registry.js";
 import { addPolicyToRegistry, initializePolicyRegistry, loadPolicyRegistry, transitionPolicyInRegistry } from "../src/policy-store.js";
 import { createPromotionDossier, renderPromotionDossier, verifyPromotionDossier } from "../src/promotion-dossier.js";
@@ -171,6 +172,34 @@ ok("routing SLO tracks metric-specific coverage", metricGapSlo.status === "insuf
 ok("routing SLO output is deterministic", JSON.stringify(passingSlo) === JSON.stringify(evaluateRoutingSlo([valid, sloFirstObservation, sloSecond, sloSecondObservation], sloConfig, "2026-08-25T13:00:00.000Z")));
 throws("routing SLO rejects unknown objectives", () => validateRoutingSloConfig({ ...sloConfig, objectives: { surprise: 1 } }), "unknown keys");
 
+console.log("tamper-evident operations review");
+const operationsSecondObservation = createRouteObservation({ route_id: sloSecond.route_id, observation_id: "obs_operations_second", observed_at: "2026-08-25T12:00:00.000Z", outcome: { status: "success", latency_ms: 140, cost_usd: 0.03, quality: 0.86 } });
+const operationsRecords = [valid, sloFirstObservation, sloSecond, operationsSecondObservation];
+const clearOperationsReview = createOperationsReview({ baseline_records: operationsRecords, current_records: operationsRecords, drift_config: driftConfig, slo_config: sloConfig, scenarios: [], created_at: "2026-08-25T14:00:00.000Z" });
+ok("operations review binds passing drift, SLO, incidents, and evidence", clearOperationsReview.payload.assessment.status === "clear" && clearOperationsReview.payload.drift.status === "pass" && clearOperationsReview.payload.slo.status === "pass" && clearOperationsReview.payload.incident.status === "clear" && verifyOperationsReview(clearOperationsReview).valid);
+const criticalOperationsReview = createOperationsReview({ baseline_records: operationsRecords, current_records: operationsRecords, drift_config: driftConfig, slo_config: sloConfig, scenarios: [{ scenario_version: "0.1", id: "provider-a-outage", unavailable_providers: ["provider-a"] }], created_at: "2026-08-25T14:00:00.000Z" });
+ok("operations review makes stranded resilience scenarios critical", criticalOperationsReview.payload.assessment.status === "critical" && criticalOperationsReview.payload.scenario_reports[0].stranded === 2 && criticalOperationsReview.payload.assessment.reasons.some((reason) => reason.includes("strands 2")));
+const operationsText = JSON.stringify(clearOperationsReview);
+ok("operations review reuses capsule privacy boundaries", !operationsText.includes("private task text") && !operationsText.includes("private.invalid") && operationsText.includes("selection reason omitted from portable capsule"));
+const operationsHtml = renderOperationsReview(criticalOperationsReview);
+ok("operations review HTML is verified, standalone, and limitation-labelled", operationsHtml.includes("Operations review") && operationsHtml.includes("Hash integrity does not authenticate") && !operationsHtml.includes("<script") && !operationsHtml.includes("https://") && !operationsHtml.includes("private task text"));
+const tamperedOperationsCapsule = JSON.parse(JSON.stringify(clearOperationsReview));
+tamperedOperationsCapsule.payload.current.payload.records[0].candidates[0].model = "tampered";
+ok("operations review verification rejects embedded capsule tampering", verifyOperationsReview(tamperedOperationsCapsule).errors.some((error) => error.includes("payload.current")));
+const tamperedOperationsReport = JSON.parse(JSON.stringify(clearOperationsReview));
+tamperedOperationsReport.payload.drift.status = "fail";
+ok("operations review verification recomputes drift reports", verifyOperationsReview(tamperedOperationsReport).errors.some((error) => error.includes("drift report")));
+const tamperedOperationsAssessment = JSON.parse(JSON.stringify(clearOperationsReview));
+tamperedOperationsAssessment.payload.assessment.status = "critical";
+ok("operations review verification recomputes its assessment", verifyOperationsReview(tamperedOperationsAssessment).errors.some((error) => error.includes("assessment")));
+const tamperedOperationsPayloadHash = JSON.parse(JSON.stringify(clearOperationsReview));
+tamperedOperationsPayloadHash.manifest.payload_sha256 = `sha256:${"0".repeat(64)}`;
+ok("operations review verification rejects payload hash drift", verifyOperationsReview(tamperedOperationsPayloadHash).errors.some((error) => error.includes("payload SHA-256")));
+const tamperedOperationsRootHash = JSON.parse(JSON.stringify(clearOperationsReview));
+tamperedOperationsRootHash.manifest.root_sha256 = `sha256:${"0".repeat(64)}`;
+ok("operations review verification rejects root hash drift", verifyOperationsReview(tamperedOperationsRootHash).errors.some((error) => error.includes("root SHA-256")));
+throws("operations review rejects duplicate scenario IDs", () => createOperationsReview({ baseline_records: operationsRecords, current_records: operationsRecords, drift_config: driftConfig, slo_config: sloConfig, scenarios: [{ scenario_version: "0.1", id: "duplicate" }, { scenario_version: "0.1", id: "duplicate" }] }), "must be unique");
+
 console.log("append-only ledger");
 const scratch = mkdtempSync(join(tmpdir(), "agentroute-"));
 const ledger = join(scratch, "routes.route.jsonl");
@@ -214,6 +243,12 @@ try {
   writeFileSync(cliSloConfig, JSON.stringify({ ...sloConfig, minimum_samples: 1, minimum_slice_samples: 1, objectives: { minimum_success_rate: 1, maximum_p95_latency_ms: 150, maximum_p95_cost_usd: 0.05, minimum_p10_quality: 0.9, maximum_policy_violation_rate: 0 } }));
   const cliSlo = execFileSync(process.execPath, ["--import", "tsx", cli, "slo", "evaluate", ledger, "--config", cliSloConfig], { encoding: "utf8" });
   ok("CLI evaluates routing SLOs", JSON.parse(cliSlo).status === "pass");
+  const cliOperations = join(scratch, "review.arops");
+  const cliOperationsHtml = join(scratch, "operations-review.html");
+  execFileSync(process.execPath, ["--import", "tsx", cli, "ops", "create", ledger, "--baseline", ledger, "--drift", cliDriftConfig, "--slo", cliSloConfig, "-o", cliOperations], { encoding: "utf8" });
+  const cliOperationsVerification = execFileSync(process.execPath, ["--import", "tsx", cli, "ops", "verify", cliOperations], { encoding: "utf8" });
+  execFileSync(process.execPath, ["--import", "tsx", cli, "ops", "open", cliOperations, "-o", cliOperationsHtml], { encoding: "utf8" });
+  ok("CLI creates, verifies, and opens an operations review", JSON.parse(cliOperationsVerification).valid && JSON.parse(cliOperationsVerification).status === "clear" && readFileSync(cliOperationsHtml, "utf8").includes("Operations review"));
   execFileSync(process.execPath, ["--import", "tsx", cli, "route", "validate", ledger], { encoding: "utf8" });
   ok("CLI validates a ledger", true);
   const cliDecision = join(scratch, "decision.json");

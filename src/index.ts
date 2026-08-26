@@ -12,6 +12,7 @@ export * from "./experiment-protocol.js";
 export * from "./incident.js";
 export * from "./openrouter-capture.js";
 export * from "./observatory.js";
+export * from "./operations-review.js";
 export * from "./policy-registry.js";
 export * from "./policy-store.js";
 export * from "./promotion-dossier.js";
