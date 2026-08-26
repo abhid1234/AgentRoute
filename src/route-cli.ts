@@ -23,6 +23,7 @@ import { buildProofPack, verifyProofPack } from "./proof-pack.js";
 import type { PolicyStatus } from "./policy-registry.js";
 import { evaluateRouteGate, formatGitHubGate } from "./quality-gate.js";
 import type { RouteGateConfig } from "./quality-gate.js";
+import { appendReliabilityTimeline, initializeReliabilityTimeline, loadReliabilityTimeline, renderReliabilityTimeline, verifyReliabilityTimeline } from "./reliability-timeline.js";
 import { fixtureReplayExecutor, runReplayArena } from "./replay-arena.js";
 import type { ReplayArenaTask, ReplayFixture } from "./replay-arena.js";
 import {
@@ -108,6 +109,10 @@ const HELP = `AgentRoute — auditable model-routing receipts
   ar ops create <current.route.jsonl> --baseline baseline.route.jsonl --drift drift.json --slo slo.json [--scenario scenario.json] -o review.arops
   ar ops verify <review.arops>
   ar ops open <review.arops> -o review.html
+  ar history create <review.arops> -o reliability.arhistory
+  ar history append <reliability.arhistory> <review.arops>
+  ar history verify <reliability.arhistory>
+  ar history open <reliability.arhistory> -o reliability.html
   ar lab <routes.route.jsonl> -o decision-lab.html
   ar arena <routes.route.jsonl> --tasks tasks.json --fixtures outcomes.json --max-requests N --max-cost-usd N [--ledger replay.route.jsonl] [-o report.json]
   ar serve <routes.route.jsonl> [--experiment-ledger replay.route.jsonl] [--host 127.0.0.1] [--port 4319] [--allow-remote]
@@ -368,6 +373,7 @@ export async function runRouteCli(args: string[]): Promise<void> {
         drift_config: JSON.parse(readFileSync(driftPath, "utf8")) as RoutingDriftConfig,
         slo_config: JSON.parse(readFileSync(sloPath, "utf8")),
         scenarios: scenarioPaths.map((path) => JSON.parse(readFileSync(path, "utf8"))),
+        ...(option(rest, "--created-at") ? { created_at: option(rest, "--created-at") } : {}),
       });
       writeOperationsReview(output, review);
       console.error(`wrote AgentRoute operations review (${review.payload.assessment.status}) -> ${output}`);
@@ -388,6 +394,37 @@ export async function runRouteCli(args: string[]): Promise<void> {
       return;
     }
     throw new Error("usage: ar ops <create|verify|open> ...");
+  }
+
+  if (command === "history") {
+    const [action, input, reviewPath] = rest;
+    if (action === "create" && input) {
+      const output = option(rest, "-o", "--out");
+      if (!output) throw new Error("history create requires -o <reliability.arhistory>");
+      const timeline = initializeReliabilityTimeline(output, JSON.parse(readFileSync(input, "utf8")), rest.includes("--force"));
+      console.error(`initialized AgentRoute reliability timeline (${timeline.summary.current_status}) -> ${output}`);
+      return;
+    }
+    if (action === "append" && input && reviewPath) {
+      const mutation = appendReliabilityTimeline(input, JSON.parse(readFileSync(reviewPath, "utf8")));
+      console.error(`${mutation.change} operations review #${mutation.entry.sequence} -> ${input}`);
+      return;
+    }
+    if (action === "verify" && input) {
+      const result = verifyReliabilityTimeline(JSON.parse(readFileSync(input, "utf8")));
+      emit(result, option(rest, "-o", "--out"));
+      if (!result.valid) throw new Error("AgentRoute reliability timeline verification failed");
+      return;
+    }
+    if (action === "open" && input) {
+      const output = option(rest, "-o", "--out");
+      if (!output) throw new Error("history open requires -o <reliability.html>");
+      if (existsSync(output) && !rest.includes("--force")) throw new Error(`${output} already exists; pass --force to replace it`);
+      writeFileSync(output, renderReliabilityTimeline(loadReliabilityTimeline(input)));
+      console.error(`wrote verified AgentRoute reliability timeline -> ${output}`);
+      return;
+    }
+    throw new Error("usage: ar history <create|append|verify|open> ...");
   }
 
   if (command === "lab") {
