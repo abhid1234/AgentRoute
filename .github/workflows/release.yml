@@ -73,4 +73,16 @@ jobs:
       - run: npm install --global npm@11.5.1
       - name: Require explicit publication guard removal
         run: node -e "const p=require('./package.json');if(p.private!==false)throw new Error('package.json private must be false in the reviewed release commit')"
-      - run: npm publish agentroute-evidence-*.tgz --access public --provenance
+      - name: Check exact version in registry
+        id: registry
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          if npm view "agentroute-evidence@$REQUESTED_VERSION" version >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish exact version
+        if: steps.registry.outputs.published != 'true'
+        run: npm publish agentroute-evidence-*.tgz --access public --provenance

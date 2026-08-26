@@ -2,8 +2,12 @@
 
 ## Supported versions
 
-AgentRoute has not made its first public release. Security fixes are developed
-against the latest commit on `main`; no older line currently receives fixes.
+| Version | Supported |
+| --- | --- |
+| 0.2.x | Yes |
+
+Security fixes are developed against the latest commit on `main` and released
+from the current minor line. Older minor lines do not currently receive fixes.
 
 ## Reporting a vulnerability
 
