@@ -48,6 +48,7 @@ interface Aggregates {
 
 const mean = (values: number[]): number | undefined => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : undefined;
 const round = (value: number): number => Number(value.toFixed(6));
+const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 
 function aggregates(records: RouteRecord[], taskType?: string): Aggregates {
   const states = [...foldRouteRecords(records).values()].filter((state) => !taskType || state.decision.task.type === taskType);
@@ -80,7 +81,7 @@ function gateMetrics(baseline: Aggregates, current: Aggregates, config: RouteGat
   const addEvidence = (id: string, message: string): void => { metrics.push(decorate({ id, status: insufficientStatus, message })); };
   const requiredSamples = config.minimum_samples ?? 1;
   const sampleMetric = (id: string, label: string, samples: number): void => {
-    if (samples < requiredSamples) addEvidence(id, `${label} has ${samples} measured samples; ${requiredSamples} required`);
+    if (samples < requiredSamples) metrics.push(decorate({ id, status: insufficientStatus, message: `${label} has ${samples} measured samples; ${requiredSamples} required`, current: samples, threshold: requiredSamples }));
     else metrics.push(decorate({ id, status: "pass", message: `${label} has ${samples} measured samples; ${requiredSamples} required`, current: samples, threshold: requiredSamples }));
   };
   sampleMetric("baseline_samples", "baseline", baseline.samples);
@@ -147,4 +148,37 @@ export function formatGitHubGate(result: RouteGateResult): string {
   const lines = [`${prefix} title=AgentRoute quality gate::${result.status.toUpperCase()} (${result.current_samples} current samples)`];
   for (const metric of result.metrics) lines.push(`- [${metric.status.toUpperCase()}]${metric.slice ? ` [${metric.slice}]` : ""} ${metric.message}`);
   return lines.join("\n");
+}
+
+export function validateRouteGateResult(value: unknown): RouteGateResult {
+  if (!object(value) || value.gate_version !== "0.1") throw new Error("route gate_version must equal 0.1");
+  for (const key of ["baseline_samples", "current_samples"] as const) if (!Number.isInteger(value[key]) || (value[key] as number) < 0) throw new Error(`route gate ${key} must be a non-negative integer`);
+  if (!Array.isArray(value.metrics) || !value.metrics.length) throw new Error("route gate metrics are required");
+  const metrics: RouteGateMetric[] = [];
+  const metricKeys = new Set<string>();
+  for (const raw of value.metrics) {
+    if (!object(raw) || typeof raw.id !== "string" || !raw.id || !["pass", "fail", "neutral"].includes(String(raw.status)) || typeof raw.message !== "string" || !raw.message) throw new Error("route gate metric contract is invalid");
+    for (const key of ["baseline", "current", "threshold"] as const) if (raw[key] !== undefined && (typeof raw[key] !== "number" || !Number.isFinite(raw[key]))) throw new Error(`${raw.id}: route gate metric ${key} must be finite`);
+    if (raw.slice !== undefined && (typeof raw.slice !== "string" || !raw.slice)) throw new Error(`${raw.id}: route gate metric slice is invalid`);
+    const key = `${raw.slice || "global"}\u0000${raw.id}`;
+    if (metricKeys.has(key)) throw new Error(`${raw.id}: duplicate route gate metric scope`);
+    metricKeys.add(key);
+    metrics.push(raw as unknown as RouteGateMetric);
+  }
+  const sampleValue = (id: string, slice?: string): number | undefined => metrics.find((metric) => metric.id === id && metric.slice === slice)?.current;
+  if (sampleValue("baseline_samples") !== value.baseline_samples || sampleValue("current_samples") !== value.current_samples) throw new Error("route gate sample summaries are inconsistent with metrics");
+  if (value.status !== gateStatus(metrics)) throw new Error("route gate status is inconsistent with metrics");
+  const metricSlices = [...new Set(metrics.flatMap((metric) => metric.slice ? [metric.slice] : []))].sort();
+  if (value.slices !== undefined) {
+    if (!object(value.slices)) throw new Error("route gate slices must be an object");
+    const declaredSlices = Object.keys(value.slices).map((taskType) => `task_type:${taskType}`).sort();
+    if (declaredSlices.join("\u0000") !== metricSlices.join("\u0000")) throw new Error("route gate slices are inconsistent with metric scopes");
+    for (const [taskType, raw] of Object.entries(value.slices)) {
+      if (!taskType || !object(raw) || !["pass", "fail", "neutral"].includes(String(raw.status)) || !Number.isInteger(raw.baseline_samples) || (raw.baseline_samples as number) < 0 || !Number.isInteger(raw.current_samples) || (raw.current_samples as number) < 0) throw new Error(`route gate slice is invalid: ${taskType || "<empty>"}`);
+      const sliceMetrics = metrics.filter((metric) => metric.slice === `task_type:${taskType}`);
+      if (!sliceMetrics.length || raw.status !== gateStatus(sliceMetrics)) throw new Error(`route gate slice status is inconsistent: ${taskType}`);
+      if (sampleValue("baseline_samples", `task_type:${taskType}`) !== raw.baseline_samples || sampleValue("current_samples", `task_type:${taskType}`) !== raw.current_samples) throw new Error(`route gate slice samples are inconsistent: ${taskType}`);
+    }
+  } else if (metricSlices.length) throw new Error("route gate metric scopes require slice summaries");
+  return value as unknown as RouteGateResult;
 }
