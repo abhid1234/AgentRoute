@@ -1,8 +1,27 @@
 {
   "name": "agentroute-evidence",
   "version": "0.2.0",
-  "private": true,
+  "private": false,
   "description": "Portable, auditable model-routing receipts and replay analytics.",
+  "keywords": [
+    "ai",
+    "llm",
+    "model-routing",
+    "observability",
+    "openrouter",
+    "provenance"
+  ],
+  "homepage": "https://abhid1234.github.io/AgentRoute/",
+  "bugs": {
+    "url": "https://github.com/abhid1234/AgentRoute/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abhid1234/AgentRoute.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

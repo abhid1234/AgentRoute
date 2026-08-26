@@ -1,9 +1,8 @@
 # Changelog
 
-AgentRoute follows Semantic Versioning. The project is not yet publicly
-released; entries below describe the intended first public release line.
+AgentRoute follows Semantic Versioning.
 
-## Unreleased — target 0.2.0
+## 0.2.0 - 2026-08-26
 
 ### Added
 
@@ -50,4 +49,5 @@ released; entries below describe the intended first public release line.
 
 - Prompts, responses, endpoints, credentials, evaluator reasoning, and unknown
   metadata are excluded from portable evidence and telemetry exports.
-- Publication remains disabled by `private: true` until human release approval.
+- Public publication requires an explicit release commit and authenticated
+  registry action; pull requests and ordinary CI cannot publish.

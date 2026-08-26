@@ -58,10 +58,10 @@ Enforce the same contract in GitHub Actions:
     require-trusted-signature: "true"
 ```
 
-That remote reference is an example until the repository and release are
-publicly verified. The action builds its pinned AgentRoute revision, treats
-caller paths as data, and emits the verified root, artifact count, signature
-validity, and signer-trust state.
+The action builds its pinned AgentRoute revision, treats caller paths as data,
+and emits the verified root, artifact count, signature validity, and
+signer-trust state. Verify the referenced tag before adopting it in a protected
+workflow.
 
 The bundled twelve-case, four-slice results are **illustrative offline
 conformance evidence**, not a live benchmark or provider-performance claim.
@@ -304,11 +304,10 @@ calls require user-provided environment keys and are never run implicitly.
 
 ## Release status
 
-AgentRoute is release-prepared but not yet published. `package.json` deliberately
-retains `private: true`; no package workflow can publish until a human removes
-that guard, configures the protected `npm-publish` GitHub environment, and
-approves the release. The unscoped `agentroute` name is already owned by an
-unrelated project, so the prepared package name is `agentroute-evidence`. Name
-availability was checked during preparation but is not reserved until publish.
-See [`SECURITY.md`](SECURITY.md),
+The public package is `agentroute-evidence`; the unscoped `agentroute` name is
+owned by an unrelated project. Releases are built from reviewed commits, and
+the release workflow prepares a tarball, SBOM, and attestations before its
+protected publish job. Always verify current repository, npm, tag, workflow,
+and provenance state independently rather than inferring publication from this
+source tree. See [`SECURITY.md`](SECURITY.md),
 [`CONTRIBUTING.md`](CONTRIBUTING.md), and [`CHANGELOG.md`](CHANGELOG.md).

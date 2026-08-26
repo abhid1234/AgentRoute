@@ -1,6 +1,7 @@
 # AgentRoute handoff for UI and launch work
 
-Status: release-prepared local implementation stack; not published or deployed.
+Status: v0.2.0 release line; verify repository, package, and deployment state
+independently.
 
 ## Product sentence
 

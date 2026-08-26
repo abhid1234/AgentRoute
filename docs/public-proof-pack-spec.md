@@ -80,12 +80,12 @@ does not load third-party code or discover packages automatically.
 
 ## Release boundary
 
-The repository becomes release-ready, not automatically released. The package
-remains private until a human deliberately removes the guard for publication.
-Release preparation includes a package allowlist, package-content verification,
-Node version CI coverage, security and contribution policies, a changelog, an
-OIDC publishing workflow gated by a GitHub environment, artifact attestations,
-and an SBOM for release artifacts.
+The repository becomes release-ready, not automatically released. Public
+publication requires a deliberate release commit and an authenticated registry
+action. Release preparation includes a package allowlist, package-content
+verification, Node version CI coverage, security and contribution policies, a
+changelog, an OIDC publishing workflow gated by a GitHub environment, artifact
+attestations, and an SBOM for release artifacts.
 
 No workflow in this milestone may publish from a pull request, expose a token,
 deploy an application, call a live model, or promote a routing policy.
