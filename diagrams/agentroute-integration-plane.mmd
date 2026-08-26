@@ -9,7 +9,8 @@ flowchart TB
     LEDGER --> ANALYZE[Audit, replay, simulation, Decision Lab]
     LEDGER --> ARENA[Shadow Replay Arena]
     ARENA -->|measured candidate receipts| LEDGER
-    ARENA --> EXPERIMENT[Paired experiment analysis]
+    PROTOCOL[Preregistered experiment protocol] --> EXPERIMENT[Paired experiment decision]
+    ARENA --> EXPERIMENT
     EXPERIMENT -->|wins, deltas, uncertainty, slices| OBS[Live Route Observatory]
     LEDGER --> OBS
     LEDGER --> GATE[Global and task-slice quality gates]
@@ -18,9 +19,12 @@ flowchart TB
   end
 
   ANALYZE --> POLICY[Durable policy registry and history]
-  EXPERIMENT --> POLICY
   HUMAN[Explicit human approval] -->|attests approval| POLICY
   POLICY --> COMPILE[Dry-run vendor compilers]
-  COMPILE --> REVIEW[Human review and apply]
+  EXPERIMENT --> DOSSIER[Promotion review dossier]
+  GATE --> DOSSIER
+  POLICY --> DOSSIER
+  COMPILE --> DOSSIER
+  DOSSIER --> REVIEW[Human review and apply]
   REVIEW -. explicit external action .-> SOURCES
   LEDGER -->|privacy-safe spans| OTEL[OpenTelemetry]

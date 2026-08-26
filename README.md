@@ -33,8 +33,11 @@ node dist/cli.js arena examples/model-routing.route.jsonl \
   --max-requests 2 --max-cost-usd 0.05 \
   --ledger local/replay.route.jsonl -o local/arena-report.json
 node dist/cli.js experiment analyze local/replay.route.jsonl \
-  --baseline-candidate winner --challenger runner-up \
+  --baseline-candidate deep-review --challenger fast-review \
   -o local/experiment-report.json
+node dist/cli.js experiment decide local/replay.route.jsonl \
+  --protocol examples/promotion-dossier.protocol.json \
+  -o local/experiment-decision.json
 node dist/cli.js serve examples/model-routing.route.jsonl \
   --experiment-ledger local/replay.route.jsonl
 node dist/cli.js policy registry init local/policies.registry.json
@@ -46,6 +49,17 @@ node dist/cli.js policy registry transition local/policies.registry.json \
   --actor reviewer --reason "experiment evidence reviewed"
 node dist/cli.js policy compile examples/evidence-suite.policy.json \
   --target vercel-ai-gateway -o local/vercel-policy.dry-run.json
+node dist/cli.js promotion create local/replay.route.jsonl \
+  --protocol examples/promotion-dossier.protocol.json \
+  --policy examples/evidence-suite.policy.json \
+  --baseline examples/model-routing.route.jsonl \
+  --current examples/model-routing.route.jsonl \
+  --gate examples/evidence-suite.gate.json \
+  --target openrouter --target vercel-ai-gateway \
+  -o local/review.arpromote
+node dist/cli.js promotion verify local/review.arpromote
+node dist/cli.js promotion open local/review.arpromote \
+  -o local/promotion-review.html
 node dist/cli.js capsule create examples/model-routing.route.jsonl \
   --policy examples/evidence-suite.policy.json -o local/demo.arcap
 node dist/cli.js capsule verify local/demo.arcap
@@ -102,6 +116,9 @@ const report = replayRoutes(observation ? [decision, observation] : [decision]);
   hard request/cost limits, candidate-level receipts, and measured regret.
 - Paired replay experiment analysis with matched-task comparisons, Wilson 95%
   uncertainty, mean quality/latency/cost deltas, and task-type slices.
+- Preregistered experiment protocols that turn declared coverage, quality,
+  latency, cost, success-rate, and required-slice criteria into deterministic
+  pass, fail, or insufficient-evidence decisions.
 - A loopback-only Live Route Observatory with a safe snapshot API and live
   ledger-change events.
 - A fail-closed routing quality gate with task-slice checks and a reusable
@@ -111,6 +128,9 @@ const report = replayRoutes(observation ? [decision, observation] : [decision]);
   for native routers, OpenRouter, LiteLLM, Portkey, and Vercel AI Gateway.
 - Tamper-evident `.arcap` evidence capsules that strip sensitive fields, support
   optional Ed25519 signer verification, and reopen as standalone Decision Labs.
+- Tamper-evident `.arpromote` review dossiers that bind an experiment decision,
+  route gate, sanitized policy diff, and recomputed dry-run vendor configurations
+  into an eligible, blocked, or insufficient promotion verdict.
 - Examples, adversarial behavioral tests, and a conformance corpus.
 
 The format and UX constraints are documented in [`docs/agentroute-spec.md`](docs/agentroute-spec.md). The handoff records the stable surfaces and verification boundary.
@@ -122,6 +142,8 @@ The full evidence-suite contracts and safety boundaries are documented in
 [`docs/evidence-suite-spec.md`](docs/evidence-suite-spec.md).
 Experiment statistics, policy lifecycle, signing, and slice-gate contracts are
 documented in [`docs/experiment-governance-spec.md`](docs/experiment-governance-spec.md).
+Preregistered decisions and promotion review artifacts are documented in
+[`docs/promotion-dossiers-spec.md`](docs/promotion-dossiers-spec.md).
 
 The first end-to-end demo kit is documented in
 [`docs/can-auto-routing-prove-it.md`](docs/can-auto-routing-prove-it.md). Its

@@ -35,16 +35,18 @@ import { buildDecisionLabModel, renderDecisionLab } from "../src/decision-lab.js
 import { auditRouteRecords } from "../src/route-audit.js";
 import { createEvidenceCapsule, renderCapsuleLab, signEvidenceCapsule, verifyEvidenceCapsule } from "../src/capsule.js";
 import { analyzeReplayExperiment } from "../src/experiment.js";
+import { decideReplayExperiment, validateExperimentDecision, validateExperimentProtocol } from "../src/experiment-protocol.js";
 import { startObservatory } from "../src/observatory.js";
 import { compilePolicy, diffPolicies, validatePolicyRegistry } from "../src/policy-registry.js";
 import { addPolicyToRegistry, initializePolicyRegistry, loadPolicyRegistry, transitionPolicyInRegistry } from "../src/policy-store.js";
-import { evaluateRouteGate, formatGitHubGate } from "../src/quality-gate.js";
+import { createPromotionDossier, renderPromotionDossier, verifyPromotionDossier } from "../src/promotion-dossier.js";
+import { evaluateRouteGate, formatGitHubGate, validateRouteGateResult } from "../src/quality-gate.js";
 import { fixtureReplayExecutor, runReplayArena } from "../src/replay-arena.js";
 import { formatReceiptDetail, formatRouteReport } from "../src/route-report.js";
 import { createExaTaskPack } from "../src/task-pack.js";
 import { routeToOtel } from "../src/route-to-otel.js";
 import { validateRouteLedger, validateRouteRecord } from "../src/route-validate.js";
-import type { RouteDecision } from "../src/route-types.js";
+import type { RouteDecision, RouteRecord } from "../src/route-types.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -194,10 +196,20 @@ try {
   ok("CLI runs a budgeted offline replay and writes conformant receipts", JSON.parse(arenaCliReport).requests_executed === 2 && validateRouteLedger(parseRouteRecords(readFileSync(arenaLedger, "utf8"))).valid);
   const experimentOutput = execFileSync(process.execPath, ["--import", "tsx", cli, "experiment", "analyze", arenaLedger, "--baseline-candidate", "winner", "--challenger", "runner-up"], { encoding: "utf8" });
   ok("CLI analyzes paired replay experiments", JSON.parse(experimentOutput).comparisons[0].matched_pairs === 1);
+  const experimentProtocolPath = join(scratch, "experiment-protocol.json");
+  writeFileSync(experimentProtocolPath, JSON.stringify({ protocol_version: "0.1", id: "cli-promotion", baseline_candidate_id: "winner", challenger_candidate_id: "runner-up", minimum_matched_pairs: 1, thresholds: { minimum_mean_quality_delta: -0.2, minimum_quality_win_rate_95ci_low: 0 } }));
+  const decisionOutput = execFileSync(process.execPath, ["--import", "tsx", cli, "experiment", "decide", arenaLedger, "--protocol", experimentProtocolPath], { encoding: "utf8" });
+  ok("CLI evaluates a preregistered experiment protocol", JSON.parse(decisionOutput).status === "pass");
   const gateConfig = join(scratch, "gate.json");
   writeFileSync(gateConfig, JSON.stringify({ minimum_samples: 1, minimum_observation_coverage: 1, maximum_cost_increase_percent: 0 }));
   const gateOutput = execFileSync(process.execPath, ["--import", "tsx", cli, "gate", ledger, "--baseline", ledger, "--config", gateConfig], { encoding: "utf8" });
   ok("CLI quality gate passes identical measured evidence", JSON.parse(gateOutput).status === "pass");
+  const promotionPath = join(scratch, "review.arpromote");
+  const promotionHtml = join(scratch, "promotion-review.html");
+  execFileSync(process.execPath, ["--import", "tsx", cli, "promotion", "create", arenaLedger, "--protocol", experimentProtocolPath, "--policy", cliPolicy, "--baseline", ledger, "--current", ledger, "--gate", gateConfig, "--target", "openrouter", "--target", "vercel-ai-gateway", "-o", promotionPath], { encoding: "utf8" });
+  const promotionVerification = execFileSync(process.execPath, ["--import", "tsx", cli, "promotion", "verify", promotionPath], { encoding: "utf8" });
+  execFileSync(process.execPath, ["--import", "tsx", cli, "promotion", "open", promotionPath, "-o", promotionHtml], { encoding: "utf8" });
+  ok("CLI creates, verifies, and opens an eligible promotion dossier", JSON.parse(promotionVerification).valid && JSON.parse(promotionVerification).verdict === "eligible" && readFileSync(promotionHtml, "utf8").includes("Promotion dossier"));
   const capsulePath = join(scratch, "evidence.arcap");
   const capsuleLab = join(scratch, "capsule-lab.html");
   execFileSync(process.execPath, ["--import", "tsx", cli, "capsule", "create", ledger, "--policy", cliPolicy, "-o", capsulePath], { encoding: "utf8" });
@@ -254,6 +266,51 @@ const malformedArena = JSON.parse(JSON.stringify(arena.records)) as RouteRecord[
 (malformedArena[0] as RouteDecision).extensions = { arena_run_id: "arena_test" };
 throws("paired experiment analysis rejects malformed attribution", () => analyzeReplayExperiment(malformedArena), "malformed Replay Arena attribution");
 throws("paired experiment analysis rejects invalid report timestamps", () => analyzeReplayExperiment(arena.records, { generated_at: "not-a-time" }), "generated_at");
+const experimentRecords = [...arena.records, ...researchArena.records];
+const experimentProtocol = {
+  protocol_version: "0.1" as const,
+  id: "runner-up-promotion",
+  description: "Preregistered challenger promotion criteria.",
+  baseline_candidate_id: "winner",
+  challenger_candidate_id: "runner-up",
+  minimum_matched_pairs: 1,
+  thresholds: {
+    minimum_mean_quality_delta: -0.11,
+    minimum_quality_win_rate_95ci_low: 0,
+    maximum_mean_latency_delta_ms: 0,
+    maximum_mean_cost_delta_usd: 0,
+    minimum_success_rate_delta: -0.01,
+  },
+  required_task_types: ["code_review", "research"],
+};
+const experimentDecision = decideReplayExperiment(experimentRecords, experimentProtocol, "2026-08-24T12:03:00.000Z");
+ok("preregistered experiment passes only when global and required slices pass", experimentDecision.status === "pass" && experimentDecision.checks.every((check) => check.status === "pass"));
+ok("experiment decisions bind protocol and exact evidence fingerprints", experimentDecision.protocol_sha256.startsWith("sha256:") && experimentDecision.evidence_sha256 !== decideReplayExperiment([...experimentRecords, valid], experimentProtocol, "2026-08-24T12:03:00.000Z").evidence_sha256);
+const failedExperimentProtocol = { ...experimentProtocol, thresholds: { ...experimentProtocol.thresholds, minimum_mean_quality_delta: 0.1 } };
+const failedExperimentDecision = decideReplayExperiment(experimentRecords, failedExperimentProtocol, "2026-08-24T12:03:00.000Z");
+ok("preregistered experiment reports measured threshold failures", failedExperimentDecision.status === "fail" && failedExperimentDecision.checks.some((check) => check.metric === "mean_quality_delta" && check.status === "fail"));
+const insufficientExperimentProtocol = { ...experimentProtocol, minimum_matched_pairs: 3, thresholds: { minimum_mean_quality_delta: -1 }, required_task_types: ["security"] };
+const insufficientExperimentDecision = decideReplayExperiment(experimentRecords, insufficientExperimentProtocol, "2026-08-24T12:03:00.000Z");
+ok("preregistered experiment distinguishes missing evidence from failure", insufficientExperimentDecision.status === "insufficient" && insufficientExperimentDecision.checks.some((check) => check.metric === "slice_present"));
+const failurePrecedence = decideReplayExperiment(experimentRecords, { ...experimentProtocol, minimum_matched_pairs: 3, thresholds: { minimum_mean_quality_delta: 0.1 }, required_task_types: [] }, "2026-08-24T12:03:00.000Z");
+ok("measured experiment failures outrank insufficient coverage", failurePrecedence.status === "fail" && failurePrecedence.checks.some((check) => check.status === "insufficient"));
+throws("experiment protocols require a declared quality threshold", () => validateExperimentProtocol({ ...experimentProtocol, thresholds: {} }), "quality success threshold");
+throws("experiment protocols reject identical candidates", () => validateExperimentProtocol({ ...experimentProtocol, challenger_candidate_id: "winner" }), "must differ");
+const inconsistentDecision = JSON.parse(JSON.stringify(experimentDecision));
+inconsistentDecision.checks[0].status = "fail";
+throws("experiment decision validation rejects inconsistent derived status", () => validateExperimentDecision(inconsistentDecision, experimentProtocol), "status is inconsistent");
+const inconsistentAnalysis = JSON.parse(JSON.stringify(experimentDecision));
+inconsistentAnalysis.analysis.comparisons[0].mean_quality_delta = 0.75;
+throws("experiment decision validation recomputes checks from stored analysis", () => validateExperimentDecision(inconsistentAnalysis, experimentProtocol), "inconsistent with analysis");
+const inconsistentAnalysisTimestamp = JSON.parse(JSON.stringify(experimentDecision));
+inconsistentAnalysisTimestamp.analysis.generated_at = "2026-08-24T12:04:00.000Z";
+throws("experiment decision validation binds its analysis timestamp", () => validateExperimentDecision(inconsistentAnalysisTimestamp, experimentProtocol), "timestamp is inconsistent");
+const inconsistentCandidates = JSON.parse(JSON.stringify(experimentDecision));
+inconsistentCandidates.analysis.comparisons[0].challenger_candidate_id = "unregistered-challenger";
+throws("experiment decision validation binds comparison identities", () => validateExperimentDecision(inconsistentCandidates, experimentProtocol), "does not match protocol candidates");
+const inconsistentAnalysisCounts = JSON.parse(JSON.stringify(experimentDecision));
+inconsistentAnalysisCounts.analysis.comparisons[0].quality_ties += 1;
+throws("experiment decision validation rejects inconsistent aggregate counts", () => validateExperimentDecision(inconsistentAnalysisCounts, experimentProtocol), "comparison counts are inconsistent");
 const budgetStop = await runReplayArena([valid], {
   run_id: "arena_budget",
   generated_at: "2026-08-24T12:00:00.000Z",
@@ -270,6 +327,11 @@ ok("quality gate fails measured regressions while retaining passing metrics", ga
 ok("quality gate renders GitHub annotations", formatGitHubGate(gate).startsWith("::error title=AgentRoute quality gate::FAIL"));
 const neutralGate = evaluateRouteGate([valid], [valid], { minimum_samples: 1, insufficient_evidence: "neutral" });
 ok("quality gate can mark insufficient evidence neutral", neutralGate.status === "neutral");
+const passingGate = evaluateRouteGate([valid, observedValid], [valid, observedValid], { minimum_samples: 1, minimum_observation_coverage: 1, maximum_cost_increase_percent: 0, maximum_latency_increase_percent: 0, minimum_quality_delta: 0 });
+ok("quality gate results have a reusable validation contract", validateRouteGateResult(passingGate).status === "pass");
+const inconsistentGate = JSON.parse(JSON.stringify(passingGate));
+inconsistentGate.status = "fail";
+throws("quality gate result validation rejects status drift", () => validateRouteGateResult(inconsistentGate), "inconsistent with metrics");
 const sliceCode = createRouteDecision({ ...valid, route_id: "route_slice_code", task: { type: "code_review" } });
 const sliceResearch = createRouteDecision({ ...valid, route_id: "route_slice_research", task: { type: "research" } });
 const sliceBaseline = [
@@ -287,6 +349,10 @@ const sliceCurrent = [
 const aggregateOnlyGate = evaluateRouteGate(sliceBaseline, sliceCurrent, { minimum_samples: 1, minimum_quality_delta: -0.1 });
 const slicedGate = evaluateRouteGate(sliceBaseline, sliceCurrent, { minimum_samples: 1, minimum_quality_delta: -0.1, task_type_slices: true });
 ok("task slices reveal regressions hidden by aggregate averages", aggregateOnlyGate.status === "pass" && slicedGate.status === "fail" && slicedGate.slices?.code_review.status === "fail");
+ok("quality gate validation binds slice summaries to metric scopes", validateRouteGateResult(slicedGate).slices?.research.current_samples === 1);
+const missingGateSlice = JSON.parse(JSON.stringify(slicedGate));
+delete missingGateSlice.slices.code_review;
+throws("quality gate validation rejects missing slice summaries", () => validateRouteGateResult(missingGateSlice), "inconsistent with metric scopes");
 const missingSliceGate = evaluateRouteGate(sliceBaseline, sliceCurrent.slice(0, 2), { minimum_samples: 1, task_type_slices: true });
 ok("task slices fail closed when a baseline segment disappears", missingSliceGate.status === "fail" && missingSliceGate.slices?.research.current_samples === 0);
 
@@ -308,6 +374,46 @@ ok("policy diff flags routing-target changes as breaking", diffPolicies(policy, 
 const compiled = (["native", "openrouter", "litellm", "portkey", "vercel-ai-gateway"] as const).map((target) => compilePolicy(policy, target));
 ok("policy compiler emits all five review-only targets with source fingerprints", compiled.every((artifact) => artifact.dry_run && artifact.source.fingerprint.startsWith("sha256:")));
 ok("Vercel compiler maps fallback models and provider ordering", JSON.stringify(compiled[4].config).includes("providerOptions") && JSON.stringify(compiled[4].config).includes("models"));
+
+const previousPolicy = { ...policy, version: "0.9.0", description: "older private policy note", criteria: { max_latency_ms: 2500, max_cost_usd: 0.06 } };
+const promotionDossier = createPromotionDossier({
+  protocol: experimentProtocol,
+  decision: experimentDecision,
+  candidate_policy: policy,
+  previous_policy: previousPolicy,
+  gate: passingGate,
+  targets: ["vercel-ai-gateway", "openrouter"],
+  created_at: "2026-08-24T13:00:00.000Z",
+});
+const promotionText = JSON.stringify(promotionDossier);
+ok("promotion dossiers bind experiment, gate, diff, and sorted dry-run targets", promotionDossier.payload.promotion.verdict === "eligible" && promotionDossier.payload.policy_diff?.from.endsWith("@0.9.0") && promotionDossier.payload.compilations.map((artifact) => artifact.target).join(",") === "openrouter,vercel-ai-gateway");
+ok("promotion dossiers strip policy descriptions and retain no route records", !promotionText.includes("private policy note") && !promotionText.includes("private task text") && !promotionText.includes('"record_type"'));
+ok("promotion dossier verification recomputes all derived artifacts", verifyPromotionDossier(promotionDossier).valid);
+const payloadHashDrift = JSON.parse(JSON.stringify(promotionDossier));
+payloadHashDrift.manifest.payload_sha256 = `sha256:${"0".repeat(64)}`;
+ok("promotion dossier verification rejects payload hash drift", verifyPromotionDossier(payloadHashDrift).errors.some((error) => error.includes("payload SHA-256")));
+const rootHashDrift = JSON.parse(JSON.stringify(promotionDossier));
+rootHashDrift.manifest.root_sha256 = `sha256:${"0".repeat(64)}`;
+ok("promotion dossier verification rejects root hash drift", verifyPromotionDossier(rootHashDrift).errors.some((error) => error.includes("root SHA-256")));
+const compilerDrift = JSON.parse(JSON.stringify(promotionDossier));
+compilerDrift.payload.compilations[0].config.models = ["tampered/model"];
+ok("promotion dossier verification rejects compiler drift", verifyPromotionDossier(compilerDrift).errors.some((error) => error.includes("compiler outputs")));
+const diffDrift = JSON.parse(JSON.stringify(promotionDossier));
+diffDrift.payload.policy_diff.breaking = !diffDrift.payload.policy_diff.breaking;
+ok("promotion dossier verification rejects policy-diff drift", verifyPromotionDossier(diffDrift).errors.some((error) => error.includes("policy diff")));
+const verdictDrift = JSON.parse(JSON.stringify(promotionDossier));
+verdictDrift.payload.promotion.verdict = "blocked";
+ok("promotion dossier verification rejects verdict drift", verifyPromotionDossier(verdictDrift).errors.some((error) => error.includes("verdict")));
+const blockedDossier = createPromotionDossier({ protocol: failedExperimentProtocol, decision: failedExperimentDecision, candidate_policy: policy, gate: passingGate, targets: ["native"] });
+const insufficientDossier = createPromotionDossier({ protocol: insufficientExperimentProtocol, decision: insufficientExperimentDecision, candidate_policy: policy, gate: neutralGate, targets: ["native"] });
+ok("promotion dossiers distinguish blocked from insufficient changes", blockedDossier.payload.promotion.verdict === "blocked" && insufficientDossier.payload.promotion.verdict === "insufficient");
+const draftDossier = createPromotionDossier({ protocol: experimentProtocol, decision: experimentDecision, candidate_policy: { ...policy, status: "draft" }, gate: passingGate, targets: ["native"] });
+ok("promotion dossiers block policies that have not reached review", draftDossier.payload.promotion.verdict === "blocked" && draftDossier.payload.promotion.reasons.some((reason) => reason.includes("must be reviewed")));
+const hostileProtocol = { ...experimentProtocol, description: "<img src=x onerror=alert(1)>" };
+const hostileDecision = decideReplayExperiment(experimentRecords, hostileProtocol, "2026-08-24T12:03:00.000Z");
+const hostileDossier = createPromotionDossier({ protocol: hostileProtocol, decision: hostileDecision, candidate_policy: policy, gate: passingGate, targets: ["native"] });
+const promotionHtmlText = renderPromotionDossier(hostileDossier);
+ok("promotion review HTML is standalone and escapes protocol text", promotionHtmlText.includes("Promotion dossier") && !promotionHtmlText.includes("https://") && !promotionHtmlText.includes("<img src=x"));
 
 const policyScratch = mkdtempSync(join(tmpdir(), "agentroute-policy-"));
 try {
@@ -600,6 +706,8 @@ const governancePolicy = JSON.parse(readFileSync(join(root, "examples/experiment
 ok("experiment governance policy example is compilable and starts in draft", compilePolicy(governancePolicy, "native").source.policy_version === "1.1.0" && governancePolicy.status === "draft");
 const governanceGateConfig = JSON.parse(readFileSync(join(root, "examples/experiment-governance.gate.json"), "utf8"));
 ok("experiment governance gate example enables fail-closed task slices", governanceGateConfig.task_type_slices === true && evaluateRouteGate(sliceBaseline, sliceCurrent, governanceGateConfig).slices?.code_review.status === "fail");
+const promotionProtocolExample = JSON.parse(readFileSync(join(root, "examples/promotion-dossier.protocol.json"), "utf8"));
+ok("promotion dossier protocol example is preregistered and valid", validateExperimentProtocol(promotionProtocolExample).challenger_candidate_id === "fast-review");
 const importFixtures = {
   portkey: importPortkeyRoute(JSON.parse(readFileSync(join(root, "examples/imports/portkey-log.json"), "utf8")), { routeId: "route_fixture_portkey" }),
   vercel: fromVercelAiGatewayRoute(JSON.parse(readFileSync(join(root, "examples/imports/vercel-ai-gateway-event.json"), "utf8")), { routeId: "route_fixture_vercel" }),

@@ -15,17 +15,21 @@ flowchart TB
   LEDGER --> ANALYZE[Audit, replay, simulation, Decision Lab]
   LEDGER --> ARENA[Shadow Replay Arena]
   ARENA -->|measured candidate receipts| LEDGER
-  ARENA --> EXPERIMENT[Paired experiment analysis]
+  PROTOCOL[Preregistered experiment protocol] --> EXPERIMENT[Paired experiment decision]
+  ARENA --> EXPERIMENT
   EXPERIMENT -->|wins, deltas, uncertainty, slices| OBS[Live Route Observatory]
   LEDGER --> OBS
   LEDGER --> GATE[Global and task-slice quality gates]
   LEDGER --> CAPSULE[Portable evidence capsule]
   CAPSULE --> SIGN[Ed25519 sign and trust verification]
   ANALYZE --> POLICY[Durable policy registry and history]
-  EXPERIMENT --> POLICY
   HUMAN[Explicit human approval] -->|attests approval| POLICY
   POLICY --> COMPILE[Dry-run vendor compilers]
-  COMPILE --> REVIEW[Human review and apply]
+  EXPERIMENT --> DOSSIER[Promotion review dossier]
+  GATE --> DOSSIER
+  POLICY --> DOSSIER
+  COMPILE --> DOSSIER
+  DOSSIER --> REVIEW[Human review and apply]
   REVIEW -. explicit external action .-> SOURCES
   LEDGER -->|privacy-safe spans| OTEL[OpenTelemetry]
 ```
@@ -89,6 +93,13 @@ explain exactly what evidence is missing and which analysis is disabled.
   slices prevent a healthy global average from hiding a workload regression.
 - **Paired experiment analysis** compares candidates only on original tasks both
   executed, then reports wins, ties, mean deltas, Wilson uncertainty, and task slices.
+- **Preregistered experiment decisions** bind success thresholds before results are
+  analyzed, distinguish measured failures from missing evidence, and require every
+  declared task slice to meet the same promotion contract.
+- **Promotion dossiers** combine that decision with a reviewed policy, deterministic
+  route gate, and dry-run vendor compilations. Their eligible, blocked, or insufficient
+  verdict is recomputed during verification; the standalone review page never applies
+  a policy or calls a provider.
 - **Policy registry** persists an append-only lifecycle history, requires explicit
   human attestation for approval, and compiles review-only artifacts for native
   routers, OpenRouter, LiteLLM, Portkey, and Vercel AI Gateway.
