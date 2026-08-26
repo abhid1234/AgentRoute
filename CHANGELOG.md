@@ -21,6 +21,9 @@ released; entries below describe the intended first public release line.
 - Detached Ed25519 proof-pack attestations with strict subject binding,
   invalid-pack refusal, deterministic signatures, and explicit separation of
   embedded-key validity from caller-pinned signer trust.
+- Reusable proof-verification GitHub Action with optional trusted-signature
+  enforcement, verified-root outputs, caller-relative paths, and an
+  injection-safe fixed Node runner.
 - OpenTelemetry GenAI and OpenInference export profiles.
 - Connector SDK conformance contract and native reference adapter.
 - Explicit offline-versus-user-supplied evidence provenance on Replay Arena

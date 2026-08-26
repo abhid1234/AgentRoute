@@ -26,6 +26,8 @@ different policy would have scored the same known candidate set.
   reliability evidence without accounts or network calls.
 - `ar proof sign` creates a detached Ed25519 attestation only after the full
   pack verifies; `ar proof verify --attestation --public-key` pins signer trust.
+- `.github/actions/agentroute-proof` enforces unsigned, signed, or
+  trusted-signature proof verification in CI and emits the verified root.
 - `examples/model-routing.route.jsonl` is the sanitized demo fixture.
 
 The UI can remain a static file reader like the OpenTrajectory Inspector. It
@@ -60,6 +62,7 @@ npm run build
 npm test
 npm run conformance
 npm run test:examples
+npm run test:action
 npm run test:package
 node dist/cli.js proof run --out local/proof-pack
 node dist/cli.js proof verify local/proof-pack

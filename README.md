@@ -34,6 +34,23 @@ The signature is detached, so the deterministic proof directory remains
 unchanged. Without a pinned public key, AgentRoute reports a cryptographically
 valid signature as untrusted rather than inferring signer identity.
 
+Enforce the same contract in GitHub Actions:
+
+```yaml
+- uses: abhid1234/AgentRoute/.github/actions/agentroute-proof@v0.2.0
+  id: agentroute-proof
+  with:
+    proof-pack: artifacts/proof-pack
+    attestation: artifacts/proof-pack.arsig
+    public-key: .github/agentroute-release.pub.pem
+    require-trusted-signature: "true"
+```
+
+That remote reference is an example until the repository and release are
+publicly verified. The action builds its pinned AgentRoute revision, treats
+caller paths as data, and emits the verified root, artifact count, signature
+validity, and signer-trust state.
+
 The bundled twelve-case, four-slice results are **illustrative offline
 conformance evidence**, not a live benchmark or provider-performance claim.
 The 31-artifact showcase connects frozen inputs, replay receipts, a
@@ -197,6 +214,9 @@ const report = replayRoutes(observation ? [decision, observation] : [decision]);
   ledger-change events.
 - A fail-closed routing quality gate with task-slice checks and a reusable
   GitHub composite action.
+- A reusable proof-verification GitHub Action with caller-workspace path
+  resolution, optional detached signatures, pinned-key enforcement,
+  machine-readable outputs, and adversarial command-injection coverage.
 - A durable policy registry with atomic writes, guarded lifecycle history,
   explicit human approval, deterministic diffing, and dry-run compilers
   for native routers, OpenRouter, LiteLLM, Portkey, and Vercel AI Gateway.
@@ -246,6 +266,8 @@ The connected launch-day walkthrough and its exact truth constraints are
 documented in [`docs/launch-showcase-spec.md`](docs/launch-showcase-spec.md).
 Detached proof authorship and trust semantics are documented in
 [`docs/proof-attestation-spec.md`](docs/proof-attestation-spec.md).
+CI enforcement is documented in
+[`docs/proof-verification-action-spec.md`](docs/proof-verification-action-spec.md).
 Third-party adapter authors should start with
 [`docs/connector-sdk.md`](docs/connector-sdk.md), and telemetry mappings are
 documented in [`docs/interoperability.md`](docs/interoperability.md).

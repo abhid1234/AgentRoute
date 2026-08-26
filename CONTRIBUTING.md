@@ -12,6 +12,10 @@ npm ci --ignore-scripts
 npm run verify
 ```
 
+`npm run verify` includes the proof-action harness. It exercises valid unsigned,
+untrusted, and pinned-key runs plus missing inputs, invalid booleans, wrong keys,
+tampered evidence, and shell-metacharacter paths without calling GitHub.
+
 Run the offline product proof after a successful build:
 
 ```bash

@@ -184,6 +184,7 @@ flowchart LR
   VERIFY --> SIGN[Detached Ed25519 attestation]
   PUBKEY[Caller-pinned public key] --> TRUST[Trusted signer verification]
   SIGN --> TRUST
+  TRUST --> CIACTION[Reusable CI proof gate]
   VERIFY --> PACK[npm package allowlist]
   PACK --> SUPPLY[SBOM and artifact attestations]
   SUPPLY --> APPROVAL[Protected human release approval]
@@ -205,3 +206,10 @@ its manifest. Verification always revalidates the complete pack before checking
 the signature. The embedded public key can establish cryptographic validity;
 only a caller-pinned public key establishes trust for that verification run,
 and neither result proves a real-world identity by itself.
+
+The proof-verification composite action builds the exact pinned AgentRoute
+revision from its own action checkout, resolves evidence paths against the
+caller's workspace, and passes them to a fixed Node process as an argument
+array. It can verify unsigned integrity, report an embedded signature as
+untrusted, or require a signature that matches a pinned key. The action has no
+write, upload, publish, deployment, or vendor authority.
