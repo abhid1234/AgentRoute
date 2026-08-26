@@ -44,6 +44,12 @@ The CLI can verify already-normalized native receipts:
 ar connector test native-receipt routes.route.jsonl --forbid "secret canary"
 ```
 
+`examples/connectors/sample-gateway-adapter.mjs` is a runnable external-style
+adapter with a saved event fixture. After `npm run build`, run
+`npm run test:examples` to see it pass schema, determinism, and three privacy
+canaries. It imports only an explicit allowlist and never copies the fixture's
+prompt, response, or authorization fields.
+
 An adapter should retain only documented routing and outcome facts. Unknown
 metadata, inputs, outputs, headers, request bodies, evaluator reasoning, and
 credentials must be dropped rather than copied for future use.

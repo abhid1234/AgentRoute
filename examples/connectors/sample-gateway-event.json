@@ -1,0 +1,14 @@
+{
+  "id": "saved_event_01",
+  "created_at": "2026-08-25T00:00:00.000Z",
+  "completed_at": "2026-08-25T00:00:00.420Z",
+  "task_type": "code_review",
+  "selected": { "id": "primary", "model": "review-model", "provider": "provider-a" },
+  "alternatives": [
+    { "id": "fallback", "model": "fast-review-model", "provider": "provider-b" }
+  ],
+  "outcome": { "status": "success", "latency_ms": 420, "cost_usd": 0.012 },
+  "prompt": "PRIVATE_PROMPT_CANARY",
+  "response": "PRIVATE_RESPONSE_CANARY",
+  "authorization": "Bearer PRIVATE_AUTH_CANARY"
+}

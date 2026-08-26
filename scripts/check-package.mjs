@@ -28,6 +28,8 @@ const required = [
   "dist/index.js",
   "examples/model-routing.route.jsonl",
   "examples/evidence-suite.replay-fixtures.json",
+  "examples/connectors/sample-gateway-adapter.mjs",
+  "examples/connectors/sample-gateway-event.json",
   "examples/public-proof.cases.json",
   "examples/public-proof.protocol.json",
   "package.json",
