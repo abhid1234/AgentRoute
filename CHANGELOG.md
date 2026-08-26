@@ -24,6 +24,9 @@ released; entries below describe the intended first public release line.
 - Reusable proof-verification GitHub Action with optional trusted-signature
   enforcement, verified-root outputs, caller-relative paths, and an
   injection-safe fixed Node runner.
+- Verified proof-pack comparison with deterministic JSON, escaped GitHub
+  annotations, explicit fail-on-change CI behavior, and strict v0.1 artifact
+  membership enforcement.
 - OpenTelemetry GenAI and OpenInference export profiles.
 - Connector SDK conformance contract and native reference adapter.
 - Explicit offline-versus-user-supplied evidence provenance on Replay Arena

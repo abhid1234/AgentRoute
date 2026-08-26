@@ -181,6 +181,9 @@ flowchart LR
   HISTORY --> MANIFEST
   MANIFEST --> REPORT[Standalone HTML report]
   MANIFEST --> VERIFY[Fail-closed proof verification]
+  PRIOR[Prior verified proof] --> DIFF[Verified proof diff]
+  VERIFY --> DIFF
+  DIFF --> REVIEW[Artifact and semantic change review]
   VERIFY --> SIGN[Detached Ed25519 attestation]
   PUBKEY[Caller-pinned public key] --> TRUST[Trusted signer verification]
   SIGN --> TRUST
@@ -213,3 +216,9 @@ caller's workspace, and passes them to a fixed Node process as an argument
 array. It can verify unsigned integrity, report an embedded signature as
 untrusted, or require a signature that matches a pinned key. The action has no
 write, upload, publish, deployment, or vendor authority.
+
+The proof-diff path validates the prior and current packs independently before
+comparing their bound roots. It exposes artifact names and SHA-256 changes plus
+the bounded proof-verification summaries, never artifact bodies or caller
+filesystem paths. A root change is review information by default and becomes a
+CI failure only when the caller opts into `--fail-on-change`.

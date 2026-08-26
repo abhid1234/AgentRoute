@@ -106,6 +106,8 @@ claim.
 - `proof verify <directory>` recomputes every digest and every embedded
   verification result, failing closed on addition, removal, or modification of
   a bound artifact.
+- `proof diff <baseline> <current>` independently verifies both packs before
+  returning a deterministic, content-free root and artifact comparison.
 - The HTML report renders without JavaScript, network access, or external
   assets and includes the words `Illustrative offline conformance evidence`.
 - Both telemetry profiles pass privacy fixtures containing prompt, response,

@@ -18,6 +18,18 @@ node dist/cli.js proof verify local/proof-pack
 
 Then open `local/proof-pack/index.html` in a browser.
 
+Compare a candidate against a previously retained, verified proof without
+exposing artifact bodies or trusting either manifest before validation:
+
+```bash
+node dist/cli.js proof diff artifacts/previous-proof local/proof-pack
+node dist/cli.js proof diff artifacts/previous-proof local/proof-pack \
+  --format github --fail-on-change
+```
+
+The second form is intended for CI jobs where any verified root change requires
+explicit review. Both packs must pass the complete proof contract first.
+
 Optionally sign the exact verified root with an existing Ed25519 key and pin the
 expected public key during verification:
 
@@ -217,6 +229,9 @@ const report = replayRoutes(observation ? [decision, observation] : [decision]);
 - A reusable proof-verification GitHub Action with caller-workspace path
   resolution, optional detached signatures, pinned-key enforcement,
   machine-readable outputs, and adversarial command-injection coverage.
+- Verified proof-to-proof diffs with deterministic artifact/root summaries,
+  content-free GitHub annotations, explicit `--fail-on-change` enforcement, and
+  invalid-pack refusal before comparison.
 - A durable policy registry with atomic writes, guarded lifecycle history,
   explicit human approval, deterministic diffing, and dry-run compilers
   for native routers, OpenRouter, LiteLLM, Portkey, and Vercel AI Gateway.
@@ -268,6 +283,8 @@ Detached proof authorship and trust semantics are documented in
 [`docs/proof-attestation-spec.md`](docs/proof-attestation-spec.md).
 CI enforcement is documented in
 [`docs/proof-verification-action-spec.md`](docs/proof-verification-action-spec.md).
+Release-to-release proof review is documented in
+[`docs/proof-diff-spec.md`](docs/proof-diff-spec.md).
 Third-party adapter authors should start with
 [`docs/connector-sdk.md`](docs/connector-sdk.md), and telemetry mappings are
 documented in [`docs/interoperability.md`](docs/interoperability.md).

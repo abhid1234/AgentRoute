@@ -21,6 +21,10 @@ policies.
    `attention` operations and timeline statuses, and the complete built-in
    connector count. Those statuses are expected for the illustrative outage
    story and are not live provider claims.
+   If a prior release proof exists, run `ar proof diff <prior> <candidate>` and
+   review every modified artifact and semantic summary. Use
+   `--fail-on-change` in automation only when the workflow is intentionally
+   enforcing an unchanged root.
 7. Run the bundled drift, routing-SLO, provider-outage scenario, incident-review,
    `.arops` operations-review, and `.arhistory` reliability-timeline workflows.
    Verify the portable artifacts and standalone HTML retain no prompt, response,

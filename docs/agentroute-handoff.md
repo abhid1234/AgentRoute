@@ -26,6 +26,9 @@ different policy would have scored the same known candidate set.
   reliability evidence without accounts or network calls.
 - `ar proof sign` creates a detached Ed25519 attestation only after the full
   pack verifies; `ar proof verify --attestation --public-key` pins signer trust.
+- `ar proof diff` validates two complete packs before reporting root, artifact,
+  and bounded semantic changes; `--fail-on-change` turns that review signal into
+  an explicit CI gate.
 - `.github/actions/agentroute-proof` enforces unsigned, signed, or
   trusted-signature proof verification in CI and emits the verified root.
 - `examples/model-routing.route.jsonl` is the sanitized demo fixture.
@@ -66,6 +69,7 @@ npm run test:action
 npm run test:package
 node dist/cli.js proof run --out local/proof-pack
 node dist/cli.js proof verify local/proof-pack
+node dist/cli.js proof diff artifacts/previous-proof local/proof-pack
 node dist/cli.js route explain examples/model-routing.route.jsonl
 node dist/cli.js route simulate examples/model-routing.route.jsonl --policy examples/fast-cheap-policy.json
 ```
