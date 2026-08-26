@@ -1,0 +1,16 @@
+{
+  "slo_version": "0.1",
+  "id": "illustrative-routing-reliability",
+  "minimum_samples": 2,
+  "minimum_slice_samples": 1,
+  "minimum_observation_coverage": 1,
+  "minimum_measurement_coverage": 1,
+  "include_task_slices": true,
+  "objectives": {
+    "minimum_success_rate": 0.9,
+    "maximum_p95_latency_ms": 5000,
+    "maximum_p95_cost_usd": 0.1,
+    "minimum_p10_quality": 0.7,
+    "maximum_policy_violation_rate": 0
+  }
+}

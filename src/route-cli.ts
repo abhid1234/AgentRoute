@@ -38,6 +38,7 @@ import { auditRouteRecords } from "./route-audit.js";
 import { formatRouteReport } from "./route-report.js";
 import { routeToOtel, routeToTelemetry } from "./route-to-otel.js";
 import { runRoutingScenario } from "./scenario.js";
+import { evaluateRoutingSlo } from "./slo.js";
 import type { TelemetryProfile } from "./route-to-otel.js";
 import {
   appendRouteRecord,
@@ -102,6 +103,7 @@ const HELP = `AgentRoute — auditable model-routing receipts
   ar scenario <routes.route.jsonl> --scenario scenario.json [-o report.json]
   ar incident analyze <routes.route.jsonl> [-o report.json]
   ar incident open <routes.route.jsonl> -o incident-review.html [--force]
+  ar slo evaluate <routes.route.jsonl> --config slo.json [-o report.json]
   ar lab <routes.route.jsonl> -o decision-lab.html
   ar arena <routes.route.jsonl> --tasks tasks.json --fixtures outcomes.json --max-requests N --max-cost-usd N [--ledger replay.route.jsonl] [-o report.json]
   ar serve <routes.route.jsonl> [--experiment-ledger replay.route.jsonl] [--host 127.0.0.1] [--port 4319] [--allow-remote]
@@ -333,6 +335,16 @@ export async function runRouteCli(args: string[]): Promise<void> {
       return;
     }
     throw new Error("usage: ar incident <analyze|open> <routes.route.jsonl> ...");
+  }
+
+  if (command === "slo") {
+    const [action, input] = rest;
+    const configPath = option(rest, "--config");
+    if (action !== "evaluate" || !input || !configPath) throw new Error("usage: ar slo evaluate <routes.route.jsonl> --config slo.json [-o report.json]");
+    const result = evaluateRoutingSlo(loadRouteRecords(input), JSON.parse(readFileSync(configPath, "utf8")));
+    emit(result, option(rest, "-o", "--out"));
+    if (result.status === "fail") throw new Error("AgentRoute routing SLO failed");
+    return;
   }
 
   if (command === "lab") {
