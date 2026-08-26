@@ -20,6 +20,7 @@ export * from "./replay-arena.js";
 export * from "./route-adapters.js";
 export * from "./route-audit.js";
 export * from "./route-report.js";
+export * from "./scenario.js";
 export * from "./route-to-otel.js";
 export * from "./route-types.js";
 export * from "./route-validate.js";

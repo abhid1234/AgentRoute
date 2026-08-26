@@ -36,6 +36,7 @@ import {
 import { auditRouteRecords } from "./route-audit.js";
 import { formatRouteReport } from "./route-report.js";
 import { routeToOtel, routeToTelemetry } from "./route-to-otel.js";
+import { runRoutingScenario } from "./scenario.js";
 import type { TelemetryProfile } from "./route-to-otel.js";
 import {
   appendRouteRecord,
@@ -97,6 +98,7 @@ const HELP = `AgentRoute — auditable model-routing receipts
   ar report <routes.route.jsonl> [--route-id ID] [-o report.txt]
   ar audit <routes.route.jsonl> [-o audit.json]
   ar drift <baseline.route.jsonl> <current.route.jsonl> --config drift.json [-o report.json]
+  ar scenario <routes.route.jsonl> --scenario scenario.json [-o report.json]
   ar lab <routes.route.jsonl> -o decision-lab.html
   ar arena <routes.route.jsonl> --tasks tasks.json --fixtures outcomes.json --max-requests N --max-cost-usd N [--ledger replay.route.jsonl] [-o report.json]
   ar serve <routes.route.jsonl> [--experiment-ledger replay.route.jsonl] [--host 127.0.0.1] [--port 4319] [--allow-remote]
@@ -302,6 +304,14 @@ export async function runRouteCli(args: string[]): Promise<void> {
     );
     emit(result, option(rest, "-o", "--out"));
     if (result.status === "fail") throw new Error("AgentRoute routing drift check failed");
+    return;
+  }
+
+  if (command === "scenario") {
+    const input = rest[0];
+    const scenarioPath = option(rest, "--scenario");
+    if (!input || !scenarioPath) throw new Error("usage: ar scenario <routes.route.jsonl> --scenario scenario.json [-o report.json]");
+    emit(runRoutingScenario(loadRouteRecords(input), JSON.parse(readFileSync(scenarioPath, "utf8"))), option(rest, "-o", "--out"));
     return;
   }
 

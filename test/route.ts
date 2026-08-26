@@ -45,6 +45,7 @@ import { createPromotionDossier, renderPromotionDossier, verifyPromotionDossier 
 import { buildProofPack, verifyProofPack } from "../src/proof-pack.js";
 import { evaluateRouteGate, formatGitHubGate, validateRouteGateResult } from "../src/quality-gate.js";
 import { fixtureReplayExecutor, runReplayArena } from "../src/replay-arena.js";
+import { runRoutingScenario, validateRoutingScenario } from "../src/scenario.js";
 import { formatReceiptDetail, formatRouteReport } from "../src/route-report.js";
 import { createExaTaskPack } from "../src/task-pack.js";
 import { routeToOtel, routeToTelemetry } from "../src/route-to-otel.js";
@@ -123,6 +124,20 @@ const insufficientDrift = evaluateRoutingDrift([valid], [valid], driftConfig, "2
 ok("routing drift distinguishes missing outcome evidence", insufficientDrift.status === "insufficient" && insufficientDrift.checks.some((check) => check.metric === "mean_quality_delta" && check.status === "insufficient"));
 throws("routing drift rejects unknown configuration", () => evaluateRoutingDrift([valid], [valid], { surprise: 1 } as never), "unknown keys");
 
+console.log("resilience scenario intelligence");
+const scenarioDecision = createRouteDecision({ ...valid, route_id: "route_scenario", criteria: undefined });
+const outageScenario = { scenario_version: "0.1", id: "provider-a-outage", unavailable_providers: ["provider-a"], cost_multipliers: [{ model: "model-b", provider: "provider-b", multiplier: 1.5 }], latency_multipliers: [{ model: "model-b", provider: "provider-b", multiplier: 1.25 }] };
+const outageReport = runRoutingScenario([scenarioDecision], outageScenario, "2026-08-25T12:00:00.000Z");
+ok("provider outage uses the recorded fallback order", outageReport.result === "impact" && outageReport.changed === 1 && outageReport.choices[0].scenario_candidate_id === "runner-up" && outageReport.choices[0].reasons.includes("provider-unavailable"));
+ok("scenario multipliers project fallback cost and latency", outageReport.projected_cost_usd === 0.015 && outageReport.projected_mean_latency_ms === 62.5 && outageReport.choices[0].cost_delta_usd === -0.005);
+const strandedReport = runRoutingScenario([valid], { scenario_version: "0.1", id: "all-providers-out", unavailable_providers: ["provider-a", "provider-b"] }, "2026-08-25T12:00:00.000Z");
+ok("scenario analysis reports routes with no recorded viable fallback", strandedReport.stranded === 1 && strandedReport.choices[0].scenario_candidate_id === undefined);
+const incompleteScenario = runRoutingScenario([selectedOnly], { scenario_version: "0.1", id: "partial-evidence" }, "2026-08-25T12:00:00.000Z");
+ok("scenario analysis refuses incomplete candidate evidence", incompleteScenario.result === "insufficient" && incompleteScenario.skipped_incomplete_evidence === 1 && incompleteScenario.analyzed === 0);
+ok("scenario output excludes endpoints and selection reasons", !JSON.stringify(outageReport).includes("private.invalid") && !JSON.stringify(outageReport).includes("best eligible score"));
+throws("scenario validation rejects unknown keys", () => validateRoutingScenario({ scenario_version: "0.1", id: "bad", apply: true }), "unknown keys");
+throws("scenario validation rejects invalid multipliers", () => validateRoutingScenario({ scenario_version: "0.1", id: "bad", cost_multipliers: [{ model: "x", multiplier: 0 }] }), "must be a finite number > 0");
+
 console.log("append-only ledger");
 const scratch = mkdtempSync(join(tmpdir(), "agentroute-"));
 const ledger = join(scratch, "routes.route.jsonl");
@@ -154,6 +169,10 @@ try {
   writeFileSync(cliDriftConfig, JSON.stringify(driftConfig));
   const cliDrift = execFileSync(process.execPath, ["--import", "tsx", cli, "drift", ledger, ledger, "--config", cliDriftConfig], { encoding: "utf8" });
   ok("CLI evaluates routing drift", JSON.parse(cliDrift).status === "pass");
+  const cliScenarioConfig = join(scratch, "scenario.json");
+  writeFileSync(cliScenarioConfig, JSON.stringify({ scenario_version: "0.1", id: "cli-outage", unavailable_providers: ["provider-a"] }));
+  const cliScenario = execFileSync(process.execPath, ["--import", "tsx", cli, "scenario", ledger, "--scenario", cliScenarioConfig], { encoding: "utf8" });
+  ok("CLI runs an offline resilience scenario", JSON.parse(cliScenario).stranded === 1);
   execFileSync(process.execPath, ["--import", "tsx", cli, "route", "validate", ledger], { encoding: "utf8" });
   ok("CLI validates a ledger", true);
   const cliDecision = join(scratch, "decision.json");
