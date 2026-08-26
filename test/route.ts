@@ -759,8 +759,10 @@ const proofScratch = mkdtempSync(join(tmpdir(), "agentroute-proof-"));
 try {
   const first = join(proofScratch, "first");
   const second = join(proofScratch, "second");
+  const malicious = join(proofScratch, "malicious");
   const firstManifest = await buildProofPack({ output: first });
   const secondManifest = await buildProofPack({ output: second });
+  await buildProofPack({ output: malicious });
   const firstVerification = verifyProofPack(first);
   ok("proof pack binds an eligible offline evidence chain", firstVerification.valid && firstVerification.dossier_verdict === "eligible" && firstManifest.claim_scope === "offline_conformance");
   const proofDecision = JSON.parse(readFileSync(join(first, "experiment-decision.json"), "utf8"));
@@ -777,6 +779,12 @@ try {
   ok("proof verification detects bound artifact tampering", !verifyProofPack(first).valid && verifyProofPack(first).errors.some((error) => error.includes("SHA-256 mismatch")));
   writeFileSync(join(second, "unexpected.txt"), "unbound");
   ok("proof verification rejects unbound additions", !verifyProofPack(second).valid && verifyProofPack(second).errors.some((error) => error.includes("exactly match")));
+  const maliciousManifest = JSON.parse(readFileSync(join(malicious, "proof-manifest.json"), "utf8"));
+  maliciousManifest.artifacts[0].path = "../outside.json";
+  maliciousManifest.artifacts.push(null);
+  writeFileSync(join(malicious, "proof-manifest.json"), JSON.stringify(maliciousManifest));
+  const maliciousVerification = verifyProofPack(malicious);
+  ok("proof verification rejects unsafe and malformed artifact entries before reading them", !maliciousVerification.valid && maliciousVerification.errors.some((error) => error.includes("flat safe filenames")) && maliciousVerification.errors.some((error) => error.includes("artifact 19 is invalid")));
   const cliProof = join(proofScratch, "cli");
   const cli = join(root, "src/cli.ts");
   const cliResult = JSON.parse(execFileSync(process.execPath, ["--import", "tsx", cli, "proof", "run", "--out", cliProof], { encoding: "utf8" }));

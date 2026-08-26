@@ -74,8 +74,10 @@ const ARTIFACT_FILES = [
 ] as const;
 
 const EXPECTED_FILES = new Set<string>([...ARTIFACT_FILES, "proof-manifest.json"]);
+const SAFE_ARTIFACT_PATH = /^[a-z0-9][a-z0-9.-]*$/;
 
 const readJson = (path: string): unknown => JSON.parse(readFileSync(path, "utf8"));
+const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 const writeCanonical = (path: string, value: unknown): void => writeFileSync(path, canonicalJson(value) + "\n");
 const mediaType = (path: string): string => path.endsWith(".html") ? "text/html" : path.endsWith(".jsonl") ? "application/x-ndjson" : "application/json";
 const escapeHtml = (value: unknown): string => String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#39;");
@@ -246,20 +248,30 @@ export async function buildProofPack(options: BuildProofPackOptions): Promise<Pr
 export function verifyProofPack(path: string): ProofVerification {
   const errors: string[] = [];
   if (!existsSync(path) || !statSync(path).isDirectory()) return { valid: false, errors: ["proof pack directory does not exist"], artifact_count: 0 };
-  let manifest: ProofManifest | undefined;
-  try { manifest = readJson(join(path, "proof-manifest.json")) as ProofManifest; } catch (error) { return { valid: false, errors: [`proof manifest: ${(error as Error).message}`], artifact_count: 0 }; }
+  let manifest: ProofManifest;
+  try {
+    const value = readJson(join(path, "proof-manifest.json"));
+    if (!object(value)) return { valid: false, errors: ["proof manifest must be an object"], artifact_count: 0 };
+    manifest = value as unknown as ProofManifest;
+  } catch (error) { return { valid: false, errors: [`proof manifest: ${(error as Error).message}`], artifact_count: 0 }; }
   if (manifest.proof_version !== "0.1" || manifest.claim_scope !== "offline_conformance" || manifest.evidence_label !== "illustrative") errors.push("proof manifest contract is invalid");
+  if (typeof manifest.generated_at !== "string" || Number.isNaN(Date.parse(manifest.generated_at)) || manifest.generator?.name !== "agentroute" || typeof manifest.generator?.version !== "string") errors.push("proof manifest generator metadata is invalid");
   if (!Array.isArray(manifest.artifacts) || !manifest.artifacts.length) errors.push("proof manifest artifacts are required");
-  const artifacts = Array.isArray(manifest.artifacts) ? manifest.artifacts : [];
+  const artifacts: ProofArtifact[] = [];
+  for (const [index, raw] of (Array.isArray(manifest.artifacts) ? manifest.artifacts : []).entries()) {
+    if (!object(raw) || typeof raw.path !== "string" || typeof raw.media_type !== "string" || typeof raw.sha256 !== "string" || !/^sha256:[0-9a-f]{64}$/.test(raw.sha256)) { errors.push(`proof manifest artifact ${index} is invalid`); continue; }
+    artifacts.push(raw as unknown as ProofArtifact);
+  }
   const paths = artifacts.map((artifact) => artifact.path);
   if (new Set(paths).size !== paths.length) errors.push("proof manifest artifact paths must be unique");
-  if (paths.some((entry) => !/^[a-z0-9][a-z0-9.-]*$/.test(entry))) errors.push("proof manifest artifact paths must be flat safe filenames");
+  if (paths.some((entry) => !SAFE_ARTIFACT_PATH.test(entry))) errors.push("proof manifest artifact paths must be flat safe filenames");
   const body: Omit<ProofManifest, "root_sha256"> = { proof_version: manifest.proof_version, claim_scope: manifest.claim_scope, evidence_label: manifest.evidence_label, generated_at: manifest.generated_at, generator: manifest.generator, artifacts };
   if (manifest.root_sha256 !== manifestRoot(body)) errors.push("proof manifest root SHA-256 mismatch");
   const actualFiles = readdirSync(path).sort();
   const declaredFiles = [...paths, "proof-manifest.json"].sort();
   if (canonicalJson(actualFiles) !== canonicalJson(declaredFiles)) errors.push("proof pack files do not exactly match the manifest");
   for (const artifact of artifacts) {
+    if (!SAFE_ARTIFACT_PATH.test(artifact.path)) continue;
     const artifactPath = join(path, artifact.path);
     if (!existsSync(artifactPath) || !statSync(artifactPath).isFile()) { errors.push(`missing artifact: ${artifact.path}`); continue; }
     if (artifact.sha256 !== sha256(readFileSync(artifactPath, "utf8"))) errors.push(`artifact SHA-256 mismatch: ${artifact.path}`);
