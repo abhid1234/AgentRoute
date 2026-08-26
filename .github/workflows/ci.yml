@@ -1,0 +1,36 @@
+name: AgentRoute CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: npm test
+      - run: npm run conformance
+      - if: matrix.node == 22 && hashFiles('scripts/check-package.mjs') != ''
+        run: npm run test:package
+      - if: matrix.node == 22 && hashFiles('.github/actions/agentroute-proof/action.yml') != ''
+        run: node dist/cli.js proof run --out local/ci-proof-pack
+      - if: matrix.node == 22 && hashFiles('.github/actions/agentroute-proof/action.yml') != ''
+        id: proof
+        uses: ./.github/actions/agentroute-proof
+        with:
+          proof-pack: local/ci-proof-pack
