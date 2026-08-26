@@ -25,6 +25,10 @@ released; entries below describe the intended first public release line.
 - Read-only resilience scenarios for provider/model outages and cost or latency
   shocks over recorded fallback evidence.
 - Privacy-safe incident forensics in deterministic JSON and standalone HTML.
+- Deterministic routing SLO evaluation with sample and metric-coverage guards,
+  task slices, nearest-rank tail metrics, and error-budget accounting.
+- Tamper-evident `.arops` operations reviews that bind sanitized ledgers to
+  recomputed drift, SLO, incident, and resilience evidence plus standalone HTML.
 - Collision-free npm package candidate `agentroute-evidence`; the AgentRoute
   project name and `ar` binary remain unchanged.
 

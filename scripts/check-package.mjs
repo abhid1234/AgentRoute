@@ -26,8 +26,11 @@ const required = [
   "dist/incident.js",
   "dist/index.d.ts",
   "dist/index.js",
+  "dist/operations-review.js",
   "dist/scenario.js",
+  "dist/slo.js",
   "docs/operations-intelligence-spec.md",
+  "docs/slo-operations-review-spec.md",
   "examples/model-routing.route.jsonl",
   "examples/evidence-suite.replay-fixtures.json",
   "examples/connectors/sample-gateway-adapter.mjs",
@@ -36,6 +39,7 @@ const required = [
   "examples/public-proof.protocol.json",
   "examples/operations-drift.json",
   "examples/provider-outage.scenario.json",
+  "examples/routing-slo.json",
   "package.json",
   "route-conformance/check.mjs",
   "schema/routedecision-0.1.schema.json",
@@ -62,8 +66,8 @@ execFileSync("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", t
   env: { ...process.env, npm_config_cache: join(cache, "install-cache") },
 });
 const help = execFileSync(join(consumer, "node_modules", ".bin", "ar"), ["--help"], { cwd: consumer, encoding: "utf8" });
-if (!help.includes("AgentRoute") || !help.includes("ar drift") || !help.includes("ar incident")) throw new Error("installed package CLI smoke test failed");
-execFileSync(process.execPath, ["--input-type=module", "-e", "import('agentroute-evidence').then(m=>{if(typeof m.evaluateRoutingDrift!=='function'||typeof m.runRoutingScenario!=='function'||typeof m.analyzeRouteIncidents!=='function')process.exit(1)})"], { cwd: consumer, stdio: "pipe" });
+if (!help.includes("AgentRoute") || !help.includes("ar drift") || !help.includes("ar incident") || !help.includes("ar slo") || !help.includes("ar ops")) throw new Error("installed package CLI smoke test failed");
+execFileSync(process.execPath, ["--input-type=module", "-e", "import('agentroute-evidence').then(m=>{if(typeof m.evaluateRoutingDrift!=='function'||typeof m.runRoutingScenario!=='function'||typeof m.analyzeRouteIncidents!=='function'||typeof m.evaluateRoutingSlo!=='function'||typeof m.createOperationsReview!=='function')process.exit(1)})"], { cwd: consumer, stdio: "pipe" });
 console.log(`package install verified: ${result.filename} (${files.length} files, ${result.size} bytes)`);
 } finally {
   rmSync(cache, { recursive: true, force: true });

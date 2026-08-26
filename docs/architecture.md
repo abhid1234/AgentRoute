@@ -14,8 +14,13 @@ flowchart TB
   CAPTURE --> LEDGER[(Append-only evidence ledger)]
   LEDGER --> ANALYZE[Audit, replay, simulation, Decision Lab]
   LEDGER --> DRIFT[Routing and outcome drift]
+  LEDGER --> SLO[Routing SLO and error budget]
   LEDGER --> SCENARIO[Outage and cost latency scenarios]
   LEDGER --> INCIDENT[Incident forensics JSON and HTML]
+  DRIFT --> OPS[Verified operations review bundle]
+  SLO --> OPS
+  SCENARIO --> OPS
+  INCIDENT --> OPS
   LEDGER --> ARENA[Shadow Replay Arena]
   ARENA -->|measured candidate receipts| LEDGER
   PROTOCOL[Preregistered experiment protocol] --> EXPERIMENT[Paired experiment decision]
@@ -131,6 +136,15 @@ explain exactly what evidence is missing and which analysis is disabled.
   execution differences, measured threshold breaches, policy violations, and
   instrumentation gaps into stable findings. Its standalone HTML contains only
   allowlisted facts and makes no root-cause claim.
+- **Routing SLOs** evaluate success, p95 latency, p95 cost, p10 quality, and
+  policy-violation objectives only after declared sample and metric-coverage
+  requirements are met. Error budgets report allowed, consumed, remaining, and
+  exhausted outcomes without treating missing observations as healthy traffic.
+- **Operations review bundles** bind sanitized baseline and current evidence to
+  normalized drift and SLO configs, resilience scenarios, recomputed reports,
+  and a derived clear, attention, insufficient, or critical assessment. The
+  `.arops` payload is hash-verified when reopened, and its standalone HTML is a
+  local review surface rather than an alerting or deployment mechanism.
 
 These workflows remain read-only. None calls a vendor, mutates a ledger, applies
 a compiled policy, or treats missing evidence as a successful measurement.

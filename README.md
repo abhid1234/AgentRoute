@@ -45,6 +45,17 @@ node dist/cli.js scenario examples/model-routing.route.jsonl \
 node dist/cli.js incident analyze examples/model-routing.route.jsonl
 node dist/cli.js incident open examples/model-routing.route.jsonl \
   -o local/incident-review.html
+node dist/cli.js slo evaluate examples/can-auto-routing-prove-it.route.jsonl \
+  --config examples/routing-slo.json
+node dist/cli.js ops create examples/can-auto-routing-prove-it.route.jsonl \
+  --baseline examples/can-auto-routing-prove-it.route.jsonl \
+  --drift examples/operations-drift.json \
+  --slo examples/routing-slo.json \
+  --scenario examples/provider-outage.scenario.json \
+  -o local/operations.arops
+node dist/cli.js ops verify local/operations.arops
+node dist/cli.js ops open local/operations.arops \
+  -o local/operations-review.html
 node dist/cli.js lab examples/can-auto-routing-prove-it.route.jsonl -o local/decision-lab.html
 node dist/cli.js connectors
 node dist/cli.js connectors --status partial --json
@@ -174,6 +185,11 @@ const report = replayRoutes(observation ? [decision, observation] : [decision]);
 - Privacy-safe incident forensics with stable findings and standalone HTML for
   failed outcomes, execution mismatches, measured SLO breaches, policy
   violations, and evidence gaps.
+- Deterministic routing SLO evaluation with coverage requirements, task slices,
+  nearest-rank percentiles, and explicit error-budget consumption.
+- Tamper-evident `.arops` review bundles that bind sanitized baseline and current
+  evidence to recomputed drift, SLO, incident, and resilience results in one
+  portable JSON artifact and standalone HTML review.
 - Examples, adversarial behavioral tests, and a conformance corpus.
 
 The format and UX constraints are documented in [`docs/agentroute-spec.md`](docs/agentroute-spec.md). The handoff records the stable surfaces and verification boundary.
@@ -196,6 +212,8 @@ Applications that deliberately supply a live replay executor should follow
 [`docs/live-benchmarking.md`](docs/live-benchmarking.md).
 Operational drift, resilience, and incident contracts are documented in
 [`docs/operations-intelligence-spec.md`](docs/operations-intelligence-spec.md).
+Routing SLOs and portable operations-review bundles are documented in
+[`docs/slo-operations-review-spec.md`](docs/slo-operations-review-spec.md).
 
 The first end-to-end demo kit is documented in
 [`docs/can-auto-routing-prove-it.md`](docs/can-auto-routing-prove-it.md). Its

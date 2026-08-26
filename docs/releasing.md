@@ -17,8 +17,9 @@ policies.
    CodeQL, and required CI checks.
 6. Review `npm pack --dry-run --json --ignore-scripts` and the generated Public
    Proof Pack as release artifacts.
-7. Run the bundled drift, provider-outage scenario, and incident-review examples
-   and verify they retain no prompt, response, endpoint, error, or credential.
+7. Run the bundled drift, routing-SLO, provider-outage scenario, incident-review,
+   and `.arops` operations-review examples. Verify the portable artifacts and
+   standalone HTML retain no prompt, response, endpoint, error, or credential.
 8. In the reviewed release commit only, remove `private: true` or set it to
    `false`. This is an explicit publication gate, not routine development.
 
