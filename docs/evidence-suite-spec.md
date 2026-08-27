@@ -1,6 +1,6 @@
 # AgentRoute evidence suite specification
 
-Status: implementation target for `codex/evidence-suite`.
+Status: implemented in AgentRoute v0.2.0.
 
 ## Product boundary
 
@@ -71,7 +71,7 @@ validity and trust in a caller-pinned public key as separate facts.
 
 ## Acceptance criteria
 
-- The package retains zero runtime dependencies and supports Node 18+.
+- The package retains zero runtime dependencies and supports Node 20+.
 - Existing route receipts, imports, reports, and conformance fixtures remain
   compatible.
 - Each module has deterministic happy-path and adversarial tests.

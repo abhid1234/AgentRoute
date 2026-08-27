@@ -12,9 +12,12 @@ npm ci --ignore-scripts
 npm run verify
 ```
 
-`npm run verify` includes the proof-action harness. It exercises valid unsigned,
-untrusted, and pinned-key runs plus missing inputs, invalid booleans, wrong keys,
-tampered evidence, and shell-metacharacter paths without calling GitHub.
+`npm run verify` covers the build, behavioral suite, conformance corpus,
+connector example, proof and gate action harnesses, release-registry guard
+tests, release-workflow contract checks, and a clean tarball install smoke test.
+The proof-action harness exercises valid unsigned, untrusted, and pinned-key
+runs plus missing inputs, invalid booleans, wrong keys, tampered evidence, and
+shell-metacharacter paths without calling GitHub.
 
 Run the offline product proof after a successful build:
 
@@ -36,4 +39,8 @@ node dist/cli.js proof verify local/proof-pack
   request.
 
 Changes require independent review. A human maintainer performs merges and
-releases after required checks pass.
+releases after required checks pass. See the
+[`route-conformance` contract](route-conformance/README.md),
+[`release procedure`](docs/releasing.md), and
+[`community conduct`](CODE_OF_CONDUCT.md) for the corresponding contributor
+boundaries.

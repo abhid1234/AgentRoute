@@ -1,6 +1,6 @@
 # AgentRoute handoff for UI and launch work
 
-Status: v0.2.0 release line; verify repository, package, and deployment state
+Status: v0.2.1 release line; verify repository, package, and deployment state
 independently.
 
 ## Product sentence

@@ -183,11 +183,15 @@ node dist/cli.js report local/vendor-demo.route.jsonl
 The `ar` package binary accepts both `ar ...` and the historical `ar route ...` form.
 
 Applications can also import the typed library surface after `npm run build`.
-The npm package candidate is `agentroute-evidence`; the project and CLI remain
+The public npm package is `@avee1234/agentroute`; the project and CLI remain
 AgentRoute and `ar`:
 
+```bash
+npm install @avee1234/agentroute
+```
+
 ```ts
-import { importCloudflareAiGatewayRoute, replayRoutes } from "agentroute-evidence";
+import { importCloudflareAiGatewayRoute, replayRoutes } from "@avee1234/agentroute";
 
 const { decision, observation } = importCloudflareAiGatewayRoute(savedLog);
 const report = replayRoutes(observation ? [decision, observation] : [decision]);
@@ -264,7 +268,9 @@ const report = replayRoutes(observation ? [decision, observation] : [decision]);
   signals, error-budget trends, and a standalone longitudinal dashboard.
 - Examples, adversarial behavioral tests, and a conformance corpus.
 
-The format and UX constraints are documented in [`docs/agentroute-spec.md`](docs/agentroute-spec.md). The handoff records the stable surfaces and verification boundary.
+The format and UX constraints are documented in [`docs/agentroute-spec.md`](docs/agentroute-spec.md).
+The [`UI and launch handoff`](docs/agentroute-handoff.md) records the stable
+surfaces and verification boundary.
 
 The system boundaries and the Requested → Selected → Observed → Proposed
 receipt rail are documented in [`docs/architecture.md`](docs/architecture.md).
@@ -304,10 +310,11 @@ calls require user-provided environment keys and are never run implicitly.
 
 ## Release status
 
-The public package is `agentroute-evidence`; the unscoped `agentroute` name is
+The public package is `@avee1234/agentroute`; the unscoped `agentroute` name is
 owned by an unrelated project. Releases are built from reviewed commits, and
 the release workflow prepares a tarball, SBOM, and attestations before its
 protected publish job. Always verify current repository, npm, tag, workflow,
 and provenance state independently rather than inferring publication from this
 source tree. See [`SECURITY.md`](SECURITY.md),
-[`CONTRIBUTING.md`](CONTRIBUTING.md), and [`CHANGELOG.md`](CHANGELOG.md).
+[`CONTRIBUTING.md`](CONTRIBUTING.md), [`CHANGELOG.md`](CHANGELOG.md), and the
+[`release procedure`](docs/releasing.md).

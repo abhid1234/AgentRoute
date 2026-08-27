@@ -1,6 +1,6 @@
 # AgentRoute experiment governance specification
 
-Status: implementation target for `codex/experiment-governance`.
+Status: implemented in AgentRoute v0.2.0.
 
 ## Product boundary
 
@@ -65,7 +65,7 @@ of hiding regressions behind a global average.
 
 ## Acceptance criteria
 
-- Zero runtime dependencies; Node 18+ remains supported.
+- Zero runtime dependencies; Node 20+ remains supported.
 - Existing unsigned capsules, policies, global gates, and replay ledgers remain
   compatible.
 - Statistical results are deterministic and refuse malformed Arena metadata.
