@@ -1,6 +1,6 @@
 {
-  "name": "agentroute-evidence",
-  "version": "0.2.0",
+  "name": "@avee1234/agentroute",
+  "version": "0.2.1",
   "private": false,
   "description": "Portable, auditable model-routing receipts and replay analytics.",
   "keywords": [
@@ -53,13 +53,14 @@
     "conformance": "node route-conformance/check.mjs",
     "test:examples": "node examples/connectors/sample-gateway-adapter.mjs",
     "test:action": "node scripts/check-proof-action.mjs && node scripts/check-gate-action.mjs",
-    "test:package": "node scripts/check-package.mjs",
+    "test:package": "node scripts/check-registry-version.test.mjs && node scripts/check-package.mjs",
     "verify": "npm run build && npm test && npm run conformance && npm run test:examples && npm run test:action && npm run test:package",
     "demo:report": "node dist/cli.js report examples/can-auto-routing-prove-it.route.jsonl"
   },
   "devDependencies": {
     "tsx": "^4.20.3",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "yaml": "^2.9.0"
   },
   "engines": {
     "node": ">=20"

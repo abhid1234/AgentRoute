@@ -183,11 +183,15 @@ node dist/cli.js report local/vendor-demo.route.jsonl
 The `ar` package binary accepts both `ar ...` and the historical `ar route ...` form.
 
 Applications can also import the typed library surface after `npm run build`.
-The npm package candidate is `agentroute-evidence`; the project and CLI remain
+The public npm package is `@avee1234/agentroute`; the project and CLI remain
 AgentRoute and `ar`:
 
+```bash
+npm install @avee1234/agentroute
+```
+
 ```ts
-import { importCloudflareAiGatewayRoute, replayRoutes } from "agentroute-evidence";
+import { importCloudflareAiGatewayRoute, replayRoutes } from "@avee1234/agentroute";
 
 const { decision, observation } = importCloudflareAiGatewayRoute(savedLog);
 const report = replayRoutes(observation ? [decision, observation] : [decision]);
@@ -304,7 +308,7 @@ calls require user-provided environment keys and are never run implicitly.
 
 ## Release status
 
-The public package is `agentroute-evidence`; the unscoped `agentroute` name is
+The public package is `@avee1234/agentroute`; the unscoped `agentroute` name is
 owned by an unrelated project. Releases are built from reviewed commits, and
 the release workflow prepares a tarball, SBOM, and attestations before its
 protected publish job. Always verify current repository, npm, tag, workflow,

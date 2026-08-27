@@ -3,9 +3,42 @@ import { generateKeyPairSync } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parse as parseYaml } from "yaml";
+
+function requireContract(condition, message) {
+  if (!condition) throw new Error(`release workflow contract failed: ${message}`);
+}
 
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-if (pkg.name !== "agentroute-evidence") throw new Error("release package name must remain agentroute-evidence");
+if (pkg.name !== "@avee1234/agentroute") throw new Error("release package name must remain @avee1234/agentroute");
+const workflow = parseYaml(readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8"));
+const buildJob = workflow?.jobs?.build;
+const publishJob = workflow?.jobs?.["publish-npm"];
+const packStep = buildJob?.steps?.find((step) => step.id === "pack");
+const provenanceStep = buildJob?.steps?.find((step) => step.uses?.startsWith("actions/attest-build-provenance@"));
+const sbomStep = buildJob?.steps?.find((step) => step.uses?.startsWith("actions/attest-sbom@"));
+const uploadStep = buildJob?.steps?.find((step) => step.uses?.startsWith("actions/upload-artifact@"));
+const downloadStep = publishJob?.steps?.find((step) => step.uses?.startsWith("actions/download-artifact@"));
+const registryStep = publishJob?.steps?.find((step) => step.id === "registry");
+const publishStep = publishJob?.steps?.find((step) => step.name === "Publish exact version");
+const tarballStepOutput = "${{ steps.pack.outputs.tarball }}";
+const tarballJobOutput = "${{ needs.build.outputs.tarball }}";
+const integrityStepOutput = "${{ steps.pack.outputs.integrity }}";
+const integrityJobOutput = "${{ needs.build.outputs.integrity }}";
+requireContract(buildJob?.outputs?.tarball === tarballStepOutput, "build job must export the pack step tarball");
+requireContract(buildJob?.outputs?.integrity === integrityStepOutput, "build job must export the pack step integrity");
+requireContract(packStep?.run?.includes('echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"'), "pack step must write its tarball output");
+requireContract(packStep?.run?.includes('echo "integrity=$INTEGRITY" >> "$GITHUB_OUTPUT"'), "pack step must write its integrity output");
+requireContract(provenanceStep?.with?.["subject-path"] === tarballStepOutput, "provenance must attest the packed tarball");
+requireContract(sbomStep?.with?.["subject-path"] === tarballStepOutput, "SBOM must attest the packed tarball");
+requireContract(uploadStep?.with?.path?.split("\n").includes(tarballStepOutput), "artifact must contain the packed tarball");
+requireContract(uploadStep?.with?.name === downloadStep?.with?.name, "artifact upload and download names must match");
+requireContract(publishJob?.needs === "build", "publish job must depend on build");
+requireContract(registryStep?.env?.EXPECTED_INTEGRITY === integrityJobOutput, "registry check must receive the reviewed tarball integrity");
+requireContract(registryStep?.run === "node scripts/check-registry-version.mjs", "registry check must use the tested release guard");
+requireContract(publishStep?.env?.TARBALL === tarballJobOutput, "publish step must receive the build tarball output");
+requireContract(publishStep?.run?.includes('npm publish "$TARBALL"'), "publish step must publish the exact handed-off tarball");
+requireContract(publishStep?.run?.includes("--access public --provenance"), "publish step must retain public access and provenance");
 const cache = mkdtempSync(join(tmpdir(), "agentroute-npm-cache-"));
 let output;
 try {
@@ -16,6 +49,7 @@ try {
   });
 const result = JSON.parse(output)[0];
 if (!result || !Array.isArray(result.files)) throw new Error("npm pack did not return a package file manifest");
+if (!/^avee1234-agentroute-\d+\.\d+\.\d+\.tgz$/.test(result.filename)) throw new Error(`unexpected scoped package tarball name: ${result.filename}`);
 const files = result.files.map((entry) => entry.path).sort();
 const required = [
   "CHANGELOG.md",
@@ -78,7 +112,7 @@ execFileSync("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", t
 });
 const help = execFileSync(join(consumer, "node_modules", ".bin", "ar"), ["--help"], { cwd: consumer, encoding: "utf8" });
 if (!help.includes("AgentRoute") || !help.includes("ar drift") || !help.includes("ar incident") || !help.includes("ar slo") || !help.includes("ar ops") || !help.includes("ar history") || !help.includes("ar proof")) throw new Error("installed package CLI smoke test failed");
-execFileSync(process.execPath, ["--input-type=module", "-e", "import('agentroute-evidence').then(m=>{if(typeof m.evaluateRoutingDrift!=='function'||typeof m.runRoutingScenario!=='function'||typeof m.analyzeRouteIncidents!=='function'||typeof m.evaluateRoutingSlo!=='function'||typeof m.createOperationsReview!=='function'||typeof m.createReliabilityTimeline!=='function'||typeof m.buildProofPack!=='function'||typeof m.verifyProofPack!=='function'||typeof m.compareProofPacks!=='function'||typeof m.formatGitHubProofDiff!=='function'||typeof m.signProofPack!=='function'||typeof m.verifyProofAttestation!=='function')process.exit(1)})"], { cwd: consumer, stdio: "pipe" });
+execFileSync(process.execPath, ["--input-type=module", "-e", "import('@avee1234/agentroute').then(m=>{if(typeof m.evaluateRoutingDrift!=='function'||typeof m.runRoutingScenario!=='function'||typeof m.analyzeRouteIncidents!=='function'||typeof m.evaluateRoutingSlo!=='function'||typeof m.createOperationsReview!=='function'||typeof m.createReliabilityTimeline!=='function'||typeof m.buildProofPack!=='function'||typeof m.verifyProofPack!=='function'||typeof m.compareProofPacks!=='function'||typeof m.formatGitHubProofDiff!=='function'||typeof m.signProofPack!=='function'||typeof m.verifyProofAttestation!=='function')process.exit(1)})"], { cwd: consumer, stdio: "pipe" });
 const installedProof = join(consumer, "proof-pack");
 const proofRun = JSON.parse(execFileSync(join(consumer, "node_modules", ".bin", "ar"), ["proof", "run", "--out", installedProof], { cwd: consumer, encoding: "utf8" }));
 const proofVerify = JSON.parse(execFileSync(join(consumer, "node_modules", ".bin", "ar"), ["proof", "verify", installedProof], { cwd: consumer, encoding: "utf8" }));

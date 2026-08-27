@@ -2,6 +2,17 @@
 
 AgentRoute follows Semantic Versioning.
 
+## 0.2.1 - 2026-08-26
+
+### Changed
+
+- Moved the public npm distribution from `agentroute-evidence` to the scoped
+  package `@avee1234/agentroute` while preserving the `ar` CLI and library API.
+- Updated release automation, package-install verification, and consumer
+  documentation for the scoped tarball and import specifier.
+- Superseded the unscoped `agentroute-evidence` distribution; new installs and
+  releases use the scoped package.
+
 ## 0.2.0 - 2026-08-26
 
 ### Added

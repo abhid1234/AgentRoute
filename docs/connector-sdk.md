@@ -8,7 +8,7 @@ load arbitrary packages.
 import {
   runConnectorConformance,
   type ConnectorAdapter,
-} from "agentroute-evidence";
+} from "@avee1234/agentroute";
 
 const adapter: ConnectorAdapter<MySavedEvent> = {
   manifest: {
