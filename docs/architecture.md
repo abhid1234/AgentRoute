@@ -200,9 +200,10 @@ outcomes remain illustrative. The landing page deliberately shows an eligible
 promotion beside an `attention` operations assessment so review evidence is not
 misrepresented as risk-free operation. Live provider evidence must be generated
 separately with user-supplied executors and labelled provenance. The release
-workflow prepares a tarball, CycloneDX SBOM, and attestations; npm publication
-requires both removal of the package's private guard and approval in the
-protected `npm-publish` environment.
+workflow prepares a tarball, CycloneDX SBOM, and attestations. npm publication
+requires a reviewed commit with `private: false`, the exact scoped package
+identity and version, approval in the protected `npm-publish` environment, and
+the configured npm OIDC trusted publisher.
 
 The detached `.arsig` path adds authorship without changing the proof pack or
 its manifest. Verification always revalidates the complete pack before checking

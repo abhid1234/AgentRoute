@@ -41,8 +41,10 @@ policies.
    `require-trusted-signature: "true"` against the release proof, attestation,
    and public key. Record the verified root rather than the private key or raw
    evidence.
-10. In the reviewed release commit only, remove `private: true` or set it to
-   `false`. This is an explicit publication gate, not routine development.
+10. In the reviewed release commit, confirm `package.json` has `private: false`,
+    the exact scoped name and version, and the intended `publishConfig` access.
+    Confirm the workflow pins the public npm registry. Treat changes to any of
+    these fields as publication-gate changes, not routine development.
 
 ## Prepare without publishing
 
@@ -55,6 +57,11 @@ build-provenance attestation, and SBOM attestation.
 After approval, rerun the workflow from the exact reviewed commit with
 `publish_npm` true. The protected environment must approve the job. npm uses
 GitHub OIDC; no long-lived `NPM_TOKEN` is stored in the repository.
+
+Before publishing, the workflow looks up the exact scoped package version. An
+explicit registry `E404` permits publication. An existing version must have the
+same SRI integrity as the reviewed tarball, while malformed responses,
+connectivity failures, and integrity mismatches stop the job.
 
 Publication does not create a GitHub release automatically. A maintainer should
 verify the registry package and provenance first, then create release notes and

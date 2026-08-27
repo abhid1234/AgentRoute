@@ -1,6 +1,6 @@
 # AgentRoute promotion dossiers specification
 
-Status: implementation target for `codex/promotion-dossiers`.
+Status: implemented in AgentRoute v0.2.0.
 
 ## Product boundary
 
@@ -75,7 +75,7 @@ Hashes detect modification but do not establish authorship. Existing signed
 
 ## Acceptance criteria
 
-- Zero runtime dependencies and Node 18+ support remain unchanged.
+- Zero runtime dependencies and Node 20+ support remain unchanged.
 - Existing receipts, unsigned or signed capsules, policies, gates, and replay
   reports remain compatible.
 - Protocol validation and decision precedence have adversarial tests.

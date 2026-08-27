@@ -268,7 +268,9 @@ const report = replayRoutes(observation ? [decision, observation] : [decision]);
   signals, error-budget trends, and a standalone longitudinal dashboard.
 - Examples, adversarial behavioral tests, and a conformance corpus.
 
-The format and UX constraints are documented in [`docs/agentroute-spec.md`](docs/agentroute-spec.md). The handoff records the stable surfaces and verification boundary.
+The format and UX constraints are documented in [`docs/agentroute-spec.md`](docs/agentroute-spec.md).
+The [`UI and launch handoff`](docs/agentroute-handoff.md) records the stable
+surfaces and verification boundary.
 
 The system boundaries and the Requested → Selected → Observed → Proposed
 receipt rail are documented in [`docs/architecture.md`](docs/architecture.md).
@@ -314,4 +316,5 @@ the release workflow prepares a tarball, SBOM, and attestations before its
 protected publish job. Always verify current repository, npm, tag, workflow,
 and provenance state independently rather than inferring publication from this
 source tree. See [`SECURITY.md`](SECURITY.md),
-[`CONTRIBUTING.md`](CONTRIBUTING.md), and [`CHANGELOG.md`](CHANGELOG.md).
+[`CONTRIBUTING.md`](CONTRIBUTING.md), [`CHANGELOG.md`](CHANGELOG.md), and the
+[`release procedure`](docs/releasing.md).
