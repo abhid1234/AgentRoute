@@ -48,7 +48,7 @@ jobs:
           echo "integrity=$INTEGRITY" >> "$GITHUB_OUTPUT"
           npm sbom --sbom-format cyclonedx > sbom.cdx.json
       - name: Attest package provenance
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: ${{ steps.pack.outputs.tarball }}
       - name: Attest package SBOM
