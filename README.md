@@ -4,6 +4,15 @@ AgentRoute is a vendor-neutral evidence and policy-analysis layer for model-rout
 
 ![AgentRoute integration plane](diagrams/agentroute-integration-plane.png)
 
+## See it first
+
+- **[Demo video (82s)](media/agentroute-demo.mp4)** — the receipt rail, an earned counterfactual, governed promotion, and the proof pack, in one pass
+- **[Interactive playground](https://agentroute-playground.vercel.app)** — six hands-on stations in your browser; no accounts, nothing installed
+- **[Launch post](https://abhid.substack.com/p/your-router-picks-the-model-can-you)** — why routing decisions need receipts, with the architecture diagrams
+- **[Open fixtures dataset](https://huggingface.co/datasets/abhid1234/agentroute-fixtures)** — the bundled example ledgers, protocols, schemas, and a full proof pack (69 files, SHA-256 manifest)
+
+All demo data is illustrative offline fixture data — deterministic and reproducible, not a live model benchmark.
+
 ## Five-minute proof
 
 Generate a complete deterministic evidence chain without accounts, credentials,
