@@ -59,7 +59,7 @@
   },
   "devDependencies": {
     "tsx": "^4.20.3",
-    "typescript": "^5.8.3",
+    "typescript": "^7.0.2",
     "yaml": "^2.9.0"
   },
   "engines": {
